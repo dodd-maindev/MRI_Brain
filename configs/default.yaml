@@ -1,0 +1,51 @@
+# ASSUMPTION: Default configuration parameters for MUS-Net reproduction
+dataset:
+  patch_size: 128
+  num_folds: 5
+  seed: 42
+  raw_min: -1000.0
+  raw_max: 400.0
+  lung_window_level: -600.0
+  lung_window_width: 1500.0
+  mediastinal_window_level: 40.0
+  mediastinal_window_width: 400.0
+  data_directory: "data/lidc_preprocessed"
+
+model:
+  base_channels: 32
+  latent_dimension: 6
+  beta: 1.0
+  attention_downsample_ratio: 4
+  otsu_bins: 256
+  otsu_straight_through: true
+  gabor_frequencies: [0.25]
+  gabor_orientations: [0.0, 0.78539816339, 1.57079632679, 2.35619449019]
+
+loss:
+  alpha_1: 1.0
+  alpha_2: 0.5
+  use_posterior_kl: false
+  kl_weight: 0.001
+
+train:
+  batch_size: 16
+  learning_rate: 0.0001
+  momentum: 0.9
+  epochs: 200
+  enable_amp: false
+  checkpoint_directory: "checkpoints"
+  log_directory: "logs"
+
+evaluation:
+  normalized_surface_distance_tau: 1.0
+  export_visualizations: true
+  visualization_directory: "visualizations"
+
+ablation:
+  active_branches: ["lung", "medias", "raw"]
+  lung_filter: "sobel"
+  medias_filter: "otsu"
+  raw_filter: "gabor"
+  use_uncertainty_indication_module: true
+  use_feature_filter_module: true
+

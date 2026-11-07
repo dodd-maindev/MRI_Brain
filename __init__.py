@@ -1,0 +1,2 @@
+"""MUS-Net package."""
+

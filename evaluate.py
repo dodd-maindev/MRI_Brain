@@ -50,12 +50,15 @@ def main() -> None:
     """Parse arguments and execute multi-fold evaluation with optional Drive support."""
     parser = argparse.ArgumentParser(description="Evaluate MUS-Net checkpoints.")
     parser.add_argument("--config", type=str, default="configs/default.yaml")
+    parser.add_argument("--data_dir", type=str, default=None, help="Path to preprocessed .npz data")
     parser.add_argument("--drive_dir", type=str, default=None, help="Root path in Google Drive")
     args = parser.parse_args()
 
     with open(args.config, "r", encoding="utf-8") as f:
         config = yaml.safe_load(f)
 
+    if args.data_dir:
+        config["dataset"]["data_directory"] = args.data_dir
     if args.drive_dir:
         d_path = Path(args.drive_dir)
         config["train"]["checkpoint_directory"] = str(d_path / "checkpoints")

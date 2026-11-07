@@ -4,6 +4,7 @@ from pathlib import Path
 import shutil
 from typing import List, Optional
 import numpy as np
+import mus_net.data.numpy_compatibility  # noqa: F401
 from mus_net.data.tcia_downloader import TciaPatientScanDownloader
 
 
@@ -87,4 +88,3 @@ class StreamingLidcPreprocessor:
                 )
                 count += 1
         return count
-

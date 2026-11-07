@@ -4,6 +4,7 @@ import argparse
 from pathlib import Path
 from typing import Optional
 import numpy as np
+import mus_net.data.numpy_compatibility  # noqa: F401
 
 
 def configure_pylidc(dicom_directory: str) -> None:
@@ -62,7 +63,7 @@ def extract_lidc_patches(
                 )
                 np.savez_compressed(
                     out_path / f"{patient_id}_nodule_{nodule_idx}_slice_{z_abs}.npz",
-                    hu_patch=patch.astype(np.float32),
+                    hu_patch=patch.astype(np.int16),
                     mask=mask_patch.astype(np.uint8),
                     patient_id=patient_id,
                 )

@@ -16,3 +16,4 @@ def patch_numpy_legacy_aliases() -> None:
 
 
 patch_numpy_legacy_aliases()
+

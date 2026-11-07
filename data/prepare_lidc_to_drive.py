@@ -1,9 +1,9 @@
 """End-to-end pipeline downloading, processing, and persisting LIDC to Drive."""
 
+import mus_net.data.numpy_compatibility  # noqa: F401
 import argparse
 from pathlib import Path
 import shutil
-import mus_net.data.numpy_compatibility  # noqa: F401
 from mus_net.data.dataset_manifest import DatasetManifestManager
 from mus_net.data.stream_preprocessor import StreamingLidcPreprocessor
 

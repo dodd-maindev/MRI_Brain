@@ -1,5 +1,6 @@
 """CLI runner for streaming LIDC-IDRI download and extraction."""
 
+import mus_net.data.numpy_compatibility  # noqa: F401
 import argparse
 from pathlib import Path
 import shutil
@@ -42,4 +43,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

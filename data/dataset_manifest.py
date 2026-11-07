@@ -50,3 +50,4 @@ class DatasetManifestManager:
         with open(manifest_path, "r", encoding="utf-8") as file_handle:
             data = json.load(file_handle)
         return data.get("total_slices", 0) > 0
+

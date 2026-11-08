@@ -13,6 +13,7 @@ def prepare_dataset_pipeline(
     temp_dir: str = "/content/temp_dicom",
     patch_size: int = 128,
     max_patients: int = None,
+    start_index: int = 0,
 ) -> None:
     """Download, process 1st annotation 2D patches, save to Drive, and generate manifest."""
     out_path = Path(drive_output_dir)
@@ -24,6 +25,8 @@ def prepare_dataset_pipeline(
     preprocessor = StreamingLidcPreprocessor(out_path, temp_path, patch_size)
 
     patient_ids = preprocessor.downloader.fetch_all_patient_ids()
+    if start_index > 0:
+        patient_ids = patient_ids[start_index:]
     if max_patients is not None:
         patient_ids = patient_ids[:max_patients]
 
@@ -35,6 +38,8 @@ def prepare_dataset_pipeline(
     for idx, pid in enumerate(patient_ids, 1):
         if preprocessor.is_patient_processed(pid):
             skipped += 1
+            if skipped % 50 == 0 or skipped == 1:
+                print(f"[{idx}/{len(patient_ids)}] {pid} already processed. Skipping.")
             continue
 
         print(f"[{idx}/{len(patient_ids)}] Processing patient: {pid}...")
@@ -45,15 +50,8 @@ def prepare_dataset_pipeline(
 
     shutil.rmtree(temp_path, ignore_errors=True)
     manifest = manifest_mgr.generate_manifest()
-
-    print(f"\n=======================================================")
-    print(f" SUCCESS: Dataset permanently stored on Google Drive!")
-    print(f" Location       : {out_path}")
-    print(f" Total Slices   : {manifest.get('total_slices', 0)}")
-    print(f" Total Patients : {manifest.get('total_patients', 0)}")
-    print(f" Format         : int16 HU patch [128, 128], uint8 mask [128, 128]")
-    print(f" Manifest       : {out_path / 'dataset_manifest.json'}")
-    print(f"=======================================================\n")
+    print(f"\nCompleted! Skipped {skipped} existing patients, processed {processed_new} new patients.")
+    print(f"Total Slices on Drive: {manifest.get('total_slices', 0)}")
 
 
 def main() -> None:
@@ -63,6 +61,7 @@ def main() -> None:
     parser.add_argument("--temp_dir", type=str, default="/content/temp_dicom")
     parser.add_argument("--patch_size", type=int, default=128)
     parser.add_argument("--max_patients", type=int, default=None)
+    parser.add_argument("--start_index", type=int, default=0, help="0-based index to start checking from")
     args = parser.parse_args()
 
     prepare_dataset_pipeline(
@@ -70,6 +69,7 @@ def main() -> None:
         temp_dir=args.temp_dir,
         patch_size=args.patch_size,
         max_patients=args.max_patients,
+        start_index=args.start_index,
     )
 
 

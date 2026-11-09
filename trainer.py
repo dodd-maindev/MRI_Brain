@@ -17,14 +17,19 @@ class MusNetTrainer:
         self.config, self.fold_idx = config, fold_idx
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.model = model.to(self.device)
-        self.optimizer = optim.SGD(
-            self.model.parameters(),
-            lr=config["train"]["learning_rate"],
-            momentum=config["train"]["momentum"],
+
+        lr, opt_type = config["train"]["learning_rate"], config["train"].get("optimizer", "adam").lower()
+        self.optimizer = (
+            optim.SGD(self.model.parameters(), lr=lr, momentum=config["train"].get("momentum", 0.9))
+            if opt_type == "sgd"
+            else optim.Adam(self.model.parameters(), lr=lr)
         )
         self.criterion = MultiWindowSegmentationLoss(
             alpha_1=config["loss"]["alpha_1"],
             alpha_2=config["loss"]["alpha_2"],
+            use_dice_loss=config["loss"].get("use_dice_loss", True),
+            dice_weight=config["loss"].get("dice_weight", 1.0),
+            bce_weight=config["loss"].get("bce_weight", 1.0),
             use_posterior_kl=config["loss"]["use_posterior_kl"],
             kl_weight=config["loss"]["kl_weight"],
         )

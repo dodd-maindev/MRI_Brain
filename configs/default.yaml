@@ -24,10 +24,14 @@ model:
 loss:
   alpha_1: 1.0
   alpha_2: 0.5
+  use_dice_loss: true
+  dice_weight: 1.0
+  bce_weight: 1.0
   use_posterior_kl: false
   kl_weight: 0.001
 
 train:
+  optimizer: "adam"
   batch_size: 16
   learning_rate: 0.0001
   momentum: 0.9
@@ -48,4 +52,3 @@ ablation:
   raw_filter: "gabor"
   use_uncertainty_indication_module: true
   use_feature_filter_module: true
-

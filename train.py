@@ -31,13 +31,13 @@ def build_network_from_config(config: dict) -> MultiWindowSegmentationNetwork:
     )
 
 
-def execute_fold_training(config: dict, fold: int) -> float:
+def execute_fold_training(config: dict, fold: int, reset: bool = False) -> float:
     """Run training lifecycle with automatic resume and immediate Drive syncing."""
     train_loader, val_loader = prepare_fold_dataloaders(config, fold)
     model = build_network_from_config(config)
     trainer = MusNetTrainer(model, config, fold)
 
-    start_epoch = trainer.resume_if_available()
+    start_epoch = 1 if reset else trainer.resume_if_available()
     num_epochs = config["train"]["epochs"]
     if start_epoch > num_epochs:
         return trainer.best_dsc
@@ -48,10 +48,10 @@ def execute_fold_training(config: dict, fold: int) -> float:
         trainer.log_epoch(epoch, tr_loss, v["loss"], v["dsc"], v["iou"], v["nsd"])
         trainer.save_checkpoint(v["dsc"], epoch)
 
-        if epoch % 10 == 0 or epoch == start_epoch:
+        if epoch % 5 == 0 or epoch == start_epoch:
             print(
                 f"Epoch {epoch:03d} | Train: {tr_loss:.4f} | "
-                f"Val Loss: {v['loss']:.4f} | DSC: {v['dsc']:.4f} | "
+                f"Val: {v['loss']:.4f} | DSC: {v['dsc']:.4f} | "
                 f"IoU: {v['iou']:.4f} | Best: {trainer.best_dsc:.4f}"
             )
     return trainer.best_dsc
@@ -64,6 +64,7 @@ def main() -> None:
     parser.add_argument("--fold", type=int, default=None, help="Fold index (0-4)")
     parser.add_argument("--data_dir", type=str, default=None, help="Path to preprocessed .npz data")
     parser.add_argument("--drive_dir", type=str, default=None, help="Root path in Google Drive")
+    parser.add_argument("--reset", action="store_true", help="Start training fresh from epoch 1")
     args = parser.parse_args()
 
     with open(args.config, "r", encoding="utf-8") as f:
@@ -80,7 +81,7 @@ def main() -> None:
     num_folds = config["dataset"]["num_folds"]
     target_folds = [args.fold] if args.fold is not None else list(range(num_folds))
 
-    scores = [execute_fold_training(config, f) for f in target_folds]
+    scores = [execute_fold_training(config, f, args.reset) for f in target_folds]
     print(f"\nFinal: Mean DSC = {np.mean(scores):.4f} +/- {np.std(scores):.4f}")
 
 

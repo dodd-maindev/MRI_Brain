@@ -47,6 +47,8 @@ class PriorNet(nn.Module):
     ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """Sample latent vector z using reparameterization trick."""
         mean, log_variance = self.forward(input_tensor)
+        if not self.training:
+            return mean, mean, log_variance
         std = torch.exp(0.5 * log_variance)
         epsilon = torch.randn_like(std)
         latent_sample = mean + epsilon * std

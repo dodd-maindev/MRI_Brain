@@ -15,7 +15,7 @@ model:
   base_channels: 32
   latent_dimension: 6
   beta: 1.0
-  attention_downsample_ratio: 4
+  attention_downsample_ratio: 2
   otsu_bins: 256
   otsu_straight_through: true
   gabor_frequencies: [0.25]

@@ -7,14 +7,17 @@ from mus_net.models.unet_blocks import ConvolutionalBlock
 
 
 class UncertaintyIndicationModule(nn.Module):
-    """Generates uncertainty-aware features F_i and preliminary mask S_i."""
+    """Generates uncertainty-aware features F_i and preliminary mask S_i (Sec 3.3)."""
 
     def __init__(self, in_channels: int, intermediate_channels: int) -> None:
-        """Initialize intermediate feature extractor and mask projection heads."""
+        """Initialize single-layer intermediate feature conv and mask prediction conv."""
         super().__init__()
-        self.feature_conv = ConvolutionalBlock(in_channels, intermediate_channels)
-        self.mask_conv = ConvolutionalBlock(intermediate_channels, intermediate_channels)
-        self.final_head = nn.Sequential(
+        self.feature_conv = nn.Sequential(
+            nn.Conv2d(in_channels, intermediate_channels, kernel_size=3, padding=1, bias=False),
+            nn.BatchNorm2d(intermediate_channels),
+            nn.ReLU(inplace=True),
+        )
+        self.mask_conv = nn.Sequential(
             nn.Conv2d(intermediate_channels, 1, kernel_size=1),
             nn.Sigmoid(),
         )
@@ -22,8 +25,7 @@ class UncertaintyIndicationModule(nn.Module):
     def forward(self, input_features: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
         """Compute intermediate feature map F_i and preliminary mask S_i."""
         intermediate_features = self.feature_conv(input_features)
-        deep_features = self.mask_conv(intermediate_features)
-        mask_prediction = self.final_head(deep_features)
+        mask_prediction = self.mask_conv(intermediate_features)
         return intermediate_features, mask_prediction
 
 

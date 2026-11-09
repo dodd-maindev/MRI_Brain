@@ -22,6 +22,7 @@ class MusNetTrainer:
             optim.SGD(self.model.parameters(), lr=lr, momentum=config["train"].get("momentum", 0.9))
             if opt == "sgd" else optim.Adam(self.model.parameters(), lr=lr)
         )
+        self.scheduler = optim.lr_scheduler.CosineAnnealingLR(self.optimizer, T_max=config["train"]["epochs"], eta_min=1e-6)
         lc = config["loss"]
         self.criterion = MultiWindowSegmentationLoss(
             lc["alpha_1"], lc["alpha_2"], lc.get("use_dice_loss", True),
@@ -31,10 +32,6 @@ class MusNetTrainer:
         self.ckpt_dir = Path(config["train"]["checkpoint_directory"])
         self.ckpt_dir.mkdir(parents=True, exist_ok=True)
         self.log_file = Path(config["train"]["log_directory"]) / f"log_fold_{fold_idx}.csv"
-        self._init_csv_log()
-
-    def _init_csv_log(self) -> None:
-        """Initialize CSV log with header if not existing."""
         self.log_file.parent.mkdir(parents=True, exist_ok=True)
         if not self.log_file.exists():
             with open(self.log_file, "w", newline="", encoding="utf-8") as f:
@@ -47,18 +44,19 @@ class MusNetTrainer:
             f.flush()
 
     def resume_if_available(self) -> int:
-        """Restore model, optimizer, and epoch from Drive checkpoint if available."""
+        """Restore model, optimizer, scheduler, and epoch from Drive checkpoint."""
         latest_path = self.ckpt_dir / f"latest_model_fold_{self.fold_idx}.pth"
         if latest_path.exists():
             ckpt = torch.load(latest_path, map_location=self.device)
             self.model.load_state_dict(ckpt["model_state_dict"])
             self.optimizer.load_state_dict(ckpt["optimizer_state_dict"])
+            if "scheduler_state_dict" in ckpt: self.scheduler.load_state_dict(ckpt["scheduler_state_dict"])
             self.best_dsc = ckpt.get("best_dsc", -1.0)
             return int(ckpt["epoch"]) + 1
         return 1
 
     def train_epoch(self, dataloader: Any) -> float:
-        """Execute one training epoch."""
+        """Execute one training epoch with learning rate annealing."""
         self.model.train()
         total_loss = 0.0
         for batch in dataloader:
@@ -68,6 +66,7 @@ class MusNetTrainer:
             loss.backward()
             self.optimizer.step()
             total_loss += loss.item()
+        self.scheduler.step()
         return total_loss / max(1, len(dataloader))
 
     @torch.no_grad()
@@ -91,6 +90,7 @@ class MusNetTrainer:
         state = {
             "epoch": epoch, "model_state_dict": self.model.state_dict(),
             "optimizer_state_dict": self.optimizer.state_dict(),
+            "scheduler_state_dict": self.scheduler.state_dict(),
             "best_dsc": max(self.best_dsc, val_dsc), "val_dsc": val_dsc,
         }
         torch.save(state, self.ckpt_dir / f"latest_model_fold_{self.fold_idx}.pth")

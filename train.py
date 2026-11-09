@@ -1,7 +1,13 @@
 """Entry point for training MUS-Net with real-time Drive saving and resume."""
 
-import argparse
 from pathlib import Path
+import sys
+
+_parent = str(Path(__file__).resolve().parent.parent)
+if _parent not in sys.path:
+    sys.path.insert(0, _parent)
+
+import argparse
 import numpy as np
 import yaml
 from mus_net.data.data_factory import prepare_fold_dataloaders

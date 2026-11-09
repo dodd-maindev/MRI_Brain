@@ -69,8 +69,9 @@ def prepare_fold_dataloaders(
     train_data = [samples[i] for i in train_indices]
     val_data = [samples[i] for i in val_indices]
 
-    train_dataset = LidcIdriSegmentationDataset(train_data, transformer, is_training=True)
-    val_dataset = LidcIdriSegmentationDataset(val_data, transformer, is_training=False)
+    p_size = config["dataset"].get("patch_size", 64)
+    train_dataset = LidcIdriSegmentationDataset(train_data, transformer, is_training=True, target_patch_size=p_size)
+    val_dataset = LidcIdriSegmentationDataset(val_data, transformer, is_training=False, target_patch_size=p_size)
 
     batch_size = config["train"]["batch_size"]
     train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, drop_last=True)

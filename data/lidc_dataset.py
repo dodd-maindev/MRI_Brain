@@ -16,11 +16,13 @@ class LidcIdriSegmentationDataset(Dataset):
         samples: List[Dict[str, Any]],
         window_transformer: ComputedTomographyWindowTransformer,
         is_training: bool = False,
+        target_patch_size: int = 64,
     ) -> None:
-        """Initialize dataset with sample references and window transformer."""
+        """Initialize dataset with sample references, window transformer, and crop size."""
         self.samples = samples
         self.transformer = window_transformer
         self.is_training = is_training
+        self.target_size = target_patch_size
 
     def __len__(self) -> int:
         """Return total sample count."""
@@ -31,22 +33,25 @@ class LidcIdriSegmentationDataset(Dataset):
     ) -> tuple[np.ndarray, np.ndarray]:
         """Apply synchronous spatial augmentations to patch and mask."""
         if random.random() > 0.5:
-            hu_patch = np.fliplr(hu_patch)
-            mask = np.fliplr(mask)
+            hu_patch, mask = np.fliplr(hu_patch), np.fliplr(mask)
         if random.random() > 0.5:
-            hu_patch = np.flipud(hu_patch)
-            mask = np.flipud(mask)
-        k_rotations = random.choice([0, 1, 2, 3])
-        if k_rotations > 0:
-            hu_patch = np.rot90(hu_patch, k=k_rotations)
-            mask = np.rot90(mask, k=k_rotations)
+            hu_patch, mask = np.flipud(hu_patch), np.flipud(mask)
+        k_rot = random.choice([0, 1, 2, 3])
+        if k_rot > 0:
+            hu_patch, mask = np.rot90(hu_patch, k=k_rot), np.rot90(mask, k=k_rot)
         return np.ascontiguousarray(hu_patch), np.ascontiguousarray(mask)
 
     def __getitem__(self, index: int) -> Dict[str, Any]:
-        """Fetch item, transform windows, and format tensors."""
+        """Fetch item, crop to target size, transform windows, and format tensors."""
         item = self.samples[index]
         hu_patch = item["hu_patch"].astype(np.float32)
         mask = (item["mask"] > 0).astype(np.float32)
+
+        if self.target_size and hu_patch.shape[0] > self.target_size:
+            h, w = hu_patch.shape
+            sy, sx = (h - self.target_size) // 2, (w - self.target_size) // 2
+            hu_patch = hu_patch[sy : sy + self.target_size, sx : sx + self.target_size]
+            mask = mask[sy : sy + self.target_size, sx : sx + self.target_size]
 
         if self.is_training:
             hu_patch, mask = self._apply_augmentation(hu_patch, mask)

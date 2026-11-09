@@ -33,6 +33,8 @@ def build_network_from_config(config: dict) -> MultiWindowSegmentationNetwork:
 
 def execute_fold_training(config: dict, fold: int, reset: bool = False) -> float:
     """Run training lifecycle with automatic resume and immediate Drive syncing."""
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
     train_loader, val_loader = prepare_fold_dataloaders(config, fold)
     model = build_network_from_config(config)
     trainer = MusNetTrainer(model, config, fold)

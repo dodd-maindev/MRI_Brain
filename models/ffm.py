@@ -4,6 +4,7 @@ import math
 from typing import Optional
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 from mus_net.models.filters import (
     SobelFilter,
     OtsuThresholdFilter,
@@ -13,7 +14,7 @@ from mus_net.models.filters import (
 
 
 class SpatialSelfAttention(nn.Module):
-    """Spatial self-attention over H*W tokens with optional key-value pooling."""
+    """Spatial self-attention over H*W tokens with memory-efficient SDPA."""
 
     def __init__(self, in_channels: int, downsample_ratio: int = 4) -> None:
         """Initialize 1x1 projection convolutions and scaling factor."""
@@ -33,11 +34,15 @@ class SpatialSelfAttention(nn.Module):
         """Compute spatial self-attention map and aggregate value representations."""
         b, c, h, w = input_features.shape
         q = self.query_conv(input_features).view(b, c, h * w).permute(0, 2, 1)
-        kv_down = self.downsample(input_features)
-        k = self.key_conv(kv_down).view(b, c, -1)
-        v = self.value_conv(kv_down).view(b, c, -1).permute(0, 2, 1)
+        kv = self.downsample(input_features)
+        k = self.key_conv(kv).view(b, c, -1).permute(0, 2, 1)
+        v = self.value_conv(kv).view(b, c, -1).permute(0, 2, 1)
 
-        energy = torch.bmm(q, k) * self.scale
+        if hasattr(F, "scaled_dot_product_attention"):
+            out = F.scaled_dot_product_attention(q.unsqueeze(1), k.unsqueeze(1), v.unsqueeze(1))
+            return out.squeeze(1).permute(0, 2, 1).contiguous().view(b, c, h, w)
+
+        energy = torch.bmm(q, k.permute(0, 2, 1)) * self.scale
         attention_map = torch.softmax(energy, dim=-1)
         out = torch.bmm(attention_map, v)
         return out.permute(0, 2, 1).contiguous().view(b, c, h, w)

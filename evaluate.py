@@ -59,7 +59,6 @@ def main() -> None:
 
     with open(args.config, "r", encoding="utf-8") as f:
         config = yaml.safe_load(f)
-
     if args.data_dir:
         config["dataset"]["data_directory"] = args.data_dir
     if args.drive_dir:
@@ -68,21 +67,20 @@ def main() -> None:
         config["evaluation"]["visualization_directory"] = str(d_p / "visualizations")
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    tau, vis_dir = config["evaluation"]["normalized_surface_distance_tau"], Path(config["evaluation"]["visualization_directory"])
+    tau = config["evaluation"]["normalized_surface_distance_tau"]
+    vis_dir = Path(config["evaluation"]["visualization_directory"])
     ckpt_dir = Path(config["train"]["checkpoint_directory"])
 
-    print(f"\nEvaluating with Threshold = {args.threshold:.2f} (Paper standard: Table 1)")
-    print("| Fold | Global DSC (%) | IoU (%) | NSD (%) | Macro DSC (%) |")
-    print("|------|----------------|---------|---------|---------------|")
+    print(f"\nEvaluating with Threshold = {args.threshold:.2f} (Paper Table 1 standard)")
+    print("| Fold | Global DSC (%) | IoU (%) | NSD (%) | Macro DSC (%) |\n|------|----------------|---------|---------|---------------|")
 
     fold_metrics = []
     for f in range(config["dataset"]["num_folds"]):
-        model = build_network_from_config(config).to(device)
         ckpt_path = ckpt_dir / f"best_model_fold_{f}.pth"
         if not ckpt_path.exists():
             continue
-        ckpt = torch.load(ckpt_path, map_location=device)
-        model.load_state_dict(ckpt["model_state_dict"])
+        model = build_network_from_config(config).to(device)
+        model.load_state_dict(torch.load(ckpt_path, map_location=device)["model_state_dict"])
         _, val_loader = prepare_fold_dataloaders(config, f)
         res = evaluate_single_fold(model, val_loader, tau, args.threshold)
         fold_metrics.append(res)
@@ -91,11 +89,10 @@ def main() -> None:
             export_sample_visualizations(model, val_loader, vis_dir)
 
     if fold_metrics:
-        m_dsc = np.mean([m["global_dsc"] for m in fold_metrics]) * 100
-        m_iou = np.mean([m["global_iou"] for m in fold_metrics]) * 100
-        m_nsd = np.mean([m["nsd"] for m in fold_metrics]) * 100
-        s_dsc = np.std([m["global_dsc"] for m in fold_metrics]) * 100
-        print(f"| Mean | {m_dsc:.2f}+-{s_dsc:.2f} | {m_iou:.2f} | {m_nsd:.2f} | {np.mean([m['macro_dsc'] for m in fold_metrics])*100:.2f} |\n")
+        m_d, s_d = np.mean([m["global_dsc"] for m in fold_metrics]) * 100, np.std([m["global_dsc"] for m in fold_metrics]) * 100
+        m_i, m_n = np.mean([m["global_iou"] for m in fold_metrics]) * 100, np.mean([m["nsd"] for m in fold_metrics]) * 100
+        m_macro = np.mean([m["macro_dsc"] for m in fold_metrics]) * 100
+        print(f"| Mean | {m_d:.2f} +/- {s_d:.2f} | {m_i:.2f} | {m_n:.2f} | {m_macro:.2f} |\n")
 
 
 if __name__ == "__main__":

@@ -71,42 +71,27 @@ class StreamingLidcPreprocessor:
         scan = pl.query(pl.Scan).filter(pl.Scan.patient_id == patient_id).first()
         if not scan:
             return 0
+        vol, count, half = scan.to_volume(), 0, self.patch_size // 2
 
-        vol = scan.to_volume()  # Optimization: Load 3D volume once per scan
-        count, half = 0, self.patch_size // 2
-
-        for nodule_idx, annotations in enumerate(scan.cluster_annotations()):
+        for n_idx, annotations in enumerate(scan.cluster_annotations()):
             if not annotations:
                 continue
             first_ann = annotations[0]
             mask_3d, bbox = first_ann.boolean_mask(), first_ann.bbox()
 
-            for z_rel in range(mask_3d.shape[2]):
-                if mask_3d[:, :, z_rel].sum() == 0:
+            for z in range(mask_3d.shape[2]):
+                if mask_3d[:, :, z].sum() == 0:
                     continue
-                slice_hu = vol[:, :, bbox[2].start + z_rel]
-                cy = int((bbox[0].start + bbox[0].stop) / 2)
-                cx = int((bbox[1].start + bbox[1].stop) / 2)
-                y1, y2 = max(0, cy - half), min(slice_hu.shape[0], cy + half)
-                x1, x2 = max(0, cx - half), min(slice_hu.shape[1], cx + half)
+                slice_hu = vol[:, :, bbox[2].start + z]
+                cy, cx = int((bbox[0].start + bbox[0].stop) / 2), int((bbox[1].start + bbox[1].stop) / 2)
+                y1, y2, x1, x2 = max(0, cy - half), min(slice_hu.shape[0], cy + half), max(0, cx - half), min(slice_hu.shape[1], cx + half)
+                pad_w = ((half - (cy - y1), half - (y2 - cy)), (half - (cx - x1), half - (x2 - cx)))
 
-                patch = np.pad(
-                    slice_hu[y1:y2, x1:x2],
-                    ((half - (cy - y1), half - (y2 - cy)), (half - (cx - x1), half - (x2 - cx))),
-                    mode="edge",
-                )
-                full_mask = np.zeros_like(slice_hu, dtype=np.uint8)
-                full_mask[bbox[0], bbox[1]] = mask_3d[:, :, z_rel]
-                mask_patch = np.pad(
-                    full_mask[y1:y2, x1:x2],
-                    ((half - (cy - y1), half - (y2 - cy)), (half - (cx - x1), half - (x2 - cx))),
-                    mode="constant",
-                )
-                np.savez_compressed(
-                    self.output_dir / f"{patient_id}_nodule_{nodule_idx}_slice_{bbox[2].start + z_rel}.npz",
-                    hu_patch=patch.astype(np.int16),
-                    mask=mask_patch.astype(np.uint8),
-                    patient_id=patient_id,
-                )
+                patch = np.pad(slice_hu[y1:y2, x1:x2], pad_w, mode="edge")
+                full_m = np.zeros_like(slice_hu, dtype=np.uint8)
+                full_m[bbox[0], bbox[1]] = mask_3d[:, :, z]
+                mask_p = np.pad(full_m[y1:y2, x1:x2], pad_w, mode="constant")
+                out_name = f"{patient_id}_nodule_{n_idx}_slice_{bbox[2].start + z}.npz"
+                np.savez_compressed(self.output_dir / out_name, hu_patch=patch.astype(np.int16), mask=mask_p, patient_id=patient_id)
                 count += 1
         return count

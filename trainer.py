@@ -17,21 +17,15 @@ class MusNetTrainer:
         self.config, self.fold_idx = config, fold_idx
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.model = model.to(self.device)
-
         lr, opt = config["train"]["learning_rate"], config["train"].get("optimizer", "adam").lower()
         self.optimizer = (
             optim.SGD(self.model.parameters(), lr=lr, momentum=config["train"].get("momentum", 0.9))
-            if opt == "sgd"
-            else optim.Adam(self.model.parameters(), lr=lr)
+            if opt == "sgd" else optim.Adam(self.model.parameters(), lr=lr)
         )
+        lc = config["loss"]
         self.criterion = MultiWindowSegmentationLoss(
-            alpha_1=config["loss"]["alpha_1"],
-            alpha_2=config["loss"]["alpha_2"],
-            use_dice_loss=config["loss"].get("use_dice_loss", True),
-            dice_weight=config["loss"].get("dice_weight", 1.0),
-            bce_weight=config["loss"].get("bce_weight", 1.0),
-            use_posterior_kl=config["loss"]["use_posterior_kl"],
-            kl_weight=config["loss"]["kl_weight"],
+            lc["alpha_1"], lc["alpha_2"], lc.get("use_dice_loss", True),
+            lc.get("dice_weight", 1.0), lc.get("bce_weight", 1.0), lc["use_posterior_kl"], lc["kl_weight"]
         )
         self.best_dsc = -1.0
         self.ckpt_dir = Path(config["train"]["checkpoint_directory"])
@@ -69,10 +63,8 @@ class MusNetTrainer:
         total_loss = 0.0
         for batch in dataloader:
             inputs = {k: batch[k].to(self.device) for k in ["raw", "lung", "medias"]}
-            masks = batch["mask"].to(self.device)
             self.optimizer.zero_grad()
-            outputs = self.model(inputs)
-            loss, _ = self.criterion(outputs, masks)
+            loss, _ = self.criterion(self.model(inputs), batch["mask"].to(self.device))
             loss.backward()
             self.optimizer.step()
             total_loss += loss.item()
@@ -83,9 +75,7 @@ class MusNetTrainer:
         """Evaluate model across validation set using volumetric accumulator."""
         self.model.eval()
         t_loss = 0.0
-        tau = self.config["evaluation"]["normalized_surface_distance_tau"]
-        acc = SegmentationMetricAccumulator(tau=tau, threshold=0.5)
-
+        acc = SegmentationMetricAccumulator(tau=self.config["evaluation"]["normalized_surface_distance_tau"])
         for batch in dataloader:
             inputs = {k: batch[k].to(self.device) for k in ["raw", "lung", "medias"]}
             masks = batch["mask"].to(self.device)
@@ -93,18 +83,15 @@ class MusNetTrainer:
             loss, _ = self.criterion(outputs, masks)
             t_loss += loss.item()
             acc.update(masks, outputs["final_prediction"])
-
         m = acc.compute()
         return {"loss": t_loss / max(1, len(dataloader)), "dsc": m["global_dsc"], "iou": m["global_iou"], "nsd": m["nsd"]}
 
     def save_checkpoint(self, val_dsc: float, epoch: int) -> None:
         """Persist latest and best checkpoints directly to Drive."""
         state = {
-            "epoch": epoch,
-            "model_state_dict": self.model.state_dict(),
+            "epoch": epoch, "model_state_dict": self.model.state_dict(),
             "optimizer_state_dict": self.optimizer.state_dict(),
-            "best_dsc": max(self.best_dsc, val_dsc),
-            "val_dsc": val_dsc,
+            "best_dsc": max(self.best_dsc, val_dsc), "val_dsc": val_dsc,
         }
         torch.save(state, self.ckpt_dir / f"latest_model_fold_{self.fold_idx}.pth")
         if val_dsc > self.best_dsc:

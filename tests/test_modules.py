@@ -58,12 +58,13 @@ def test_loss_function_computation() -> None:
     b, c, h, w = 2, 1, 32, 32
     target = torch.ones((b, c, h, w), dtype=torch.float32)
 
+    leaf_pred = torch.rand(b, c, h, w, requires_grad=True)
     outputs = {
-        "final_prediction": torch.sigmoid(torch.randn(b, c, h, w, requires_grad=True)),
+        "final_prediction": leaf_pred,
         "branch_masks": {
-            "lung": torch.sigmoid(torch.randn(b, c, h, w, requires_grad=True)),
-            "medias": torch.sigmoid(torch.randn(b, c, h, w, requires_grad=True)),
-            "raw": torch.sigmoid(torch.randn(b, c, h, w, requires_grad=True)),
+            "lung": torch.rand(b, c, h, w, requires_grad=True),
+            "medias": torch.rand(b, c, h, w, requires_grad=True),
+            "raw": torch.rand(b, c, h, w, requires_grad=True),
         },
         "latent_parameters": {
             "lung": (torch.randn(b, 6, requires_grad=True), torch.randn(b, 6, requires_grad=True)),
@@ -73,5 +74,4 @@ def test_loss_function_computation() -> None:
     assert loss.item() > 0.0
     assert "total_loss" in details
     loss.backward()
-    assert outputs["final_prediction"].grad is not None
-
+    assert leaf_pred.grad is not None

@@ -6,7 +6,7 @@ from typing import Any, Dict
 import torch
 import torch.optim as optim
 from mus_net.losses import MultiWindowSegmentationLoss
-from mus_net.metrics import evaluate_segmentation_batch
+from mus_net.metrics import SegmentationMetricAccumulator
 
 
 class MusNetTrainer:
@@ -18,10 +18,10 @@ class MusNetTrainer:
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.model = model.to(self.device)
 
-        lr, opt_type = config["train"]["learning_rate"], config["train"].get("optimizer", "adam").lower()
+        lr, opt = config["train"]["learning_rate"], config["train"].get("optimizer", "adam").lower()
         self.optimizer = (
             optim.SGD(self.model.parameters(), lr=lr, momentum=config["train"].get("momentum", 0.9))
-            if opt_type == "sgd"
+            if opt == "sgd"
             else optim.Adam(self.model.parameters(), lr=lr)
         )
         self.criterion = MultiWindowSegmentationLoss(
@@ -80,20 +80,22 @@ class MusNetTrainer:
 
     @torch.no_grad()
     def validate(self, dataloader: Any) -> Dict[str, float]:
-        """Evaluate model across validation set."""
+        """Evaluate model across validation set using volumetric accumulator."""
         self.model.eval()
-        t_loss, dsc_sum, iou_sum, nsd_sum, cnt = 0.0, 0.0, 0.0, 0.0, 0
+        t_loss = 0.0
         tau = self.config["evaluation"]["normalized_surface_distance_tau"]
+        acc = SegmentationMetricAccumulator(tau=tau, threshold=0.5)
+
         for batch in dataloader:
             inputs = {k: batch[k].to(self.device) for k in ["raw", "lung", "medias"]}
             masks = batch["mask"].to(self.device)
             outputs = self.model(inputs)
             loss, _ = self.criterion(outputs, masks)
             t_loss += loss.item()
-            m = evaluate_segmentation_batch(masks, outputs["final_prediction"], tau)
-            dsc_sum, iou_sum, nsd_sum, cnt = dsc_sum + m["dsc"], iou_sum + m["iou"], nsd_sum + m["nsd"], cnt + 1
-        n = max(1, cnt)
-        return {"loss": t_loss / n, "dsc": dsc_sum / n, "iou": iou_sum / n, "nsd": nsd_sum / n}
+            acc.update(masks, outputs["final_prediction"])
+
+        m = acc.compute()
+        return {"loss": t_loss / max(1, len(dataloader)), "dsc": m["global_dsc"], "iou": m["global_iou"], "nsd": m["nsd"]}
 
     def save_checkpoint(self, val_dsc: float, epoch: int) -> None:
         """Persist latest and best checkpoints directly to Drive."""

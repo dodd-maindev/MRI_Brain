@@ -31,17 +31,20 @@ class MultiWindowSegmentationLoss(nn.Module):
 
     @staticmethod
     def _compute_dice_loss(pred: torch.Tensor, target: torch.Tensor, smooth: float = 1.0) -> torch.Tensor:
-        """Calculate soft Dice loss preventing collapse to all-background predictions."""
-        intersection = torch.sum(pred * target)
-        cardinality = torch.sum(pred + target)
-        dice = (2.0 * intersection + smooth) / (cardinality + smooth)
-        return 1.0 - dice
+        """Calculate soft Dice loss per slice across spatial dimensions (H, W)."""
+        b = pred.shape[0]
+        p_f, t_f = pred.view(b, -1), target.view(b, -1)
+        inter = torch.sum(p_f * t_f, dim=1)
+        card = torch.sum(p_f + t_f, dim=1)
+        dice = (2.0 * inter + smooth) / (card + smooth)
+        return torch.mean(1.0 - dice)
 
     def _compute_term_loss(self, pred: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
         """Combine BCE with soft Dice loss to tackle 98% background imbalance."""
-        bce = F.binary_cross_entropy(pred, target)
+        clamped_pred = torch.clamp(pred, 1e-7, 1.0 - 1e-7)
+        bce = F.binary_cross_entropy(clamped_pred, target)
         if self.use_dice_loss:
-            dice = self._compute_dice_loss(pred, target)
+            dice = self._compute_dice_loss(clamped_pred, target)
             return self.bce_weight * bce + self.dice_weight * dice
         return bce
 
@@ -65,7 +68,7 @@ class MultiWindowSegmentationLoss(nn.Module):
 
         total_loss = self.alpha_1 * loss_ffm
         if active_count > 0:
-            total_loss = total_loss + self.alpha_2 * branch_losses_sum
+            total_loss = total_loss + self.alpha_2 * (branch_losses_sum / active_count)
 
         if self.use_posterior_kl and "latent_parameters" in model_outputs:
             kl_sum = torch.tensor(0.0, device=ground_truth_mask.device)

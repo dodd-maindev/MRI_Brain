@@ -7,14 +7,12 @@ import torch
 
 
 def create_sobel_kernels() -> tuple[torch.Tensor, torch.Tensor]:
-    """Return horizontal and vertical Sobel 3x3 kernels."""
-    horizontal = torch.tensor(
-        [[-1.0, 0.0, 1.0], [-2.0, 0.0, 2.0], [-1.0, 0.0, 1.0]],
-        dtype=torch.float32,
+    """Return normalized horizontal and vertical Sobel 3x3 kernels."""
+    horizontal = (
+        torch.tensor([[-1.0, 0.0, 1.0], [-2.0, 0.0, 2.0], [-1.0, 0.0, 1.0]], dtype=torch.float32) / 4.0
     ).unsqueeze(0).unsqueeze(0)
-    vertical = torch.tensor(
-        [[-1.0, -2.0, -1.0], [0.0, 0.0, 0.0], [1.0, 2.0, 1.0]],
-        dtype=torch.float32,
+    vertical = (
+        torch.tensor([[-1.0, -2.0, -1.0], [0.0, 0.0, 0.0], [1.0, 2.0, 1.0]], dtype=torch.float32) / 4.0
     ).unsqueeze(0).unsqueeze(0)
     return horizontal, vertical
 

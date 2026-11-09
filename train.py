@@ -50,13 +50,11 @@ def execute_fold_training(config: dict, fold: int, reset: bool = False) -> float
         v = trainer.validate(val_loader)
         trainer.log_epoch(epoch, tr_loss, v["loss"], v["dsc"], v["iou"], v["nsd"])
         trainer.save_checkpoint(v["dsc"], epoch)
-
-        if epoch % 5 == 0 or epoch == start_epoch:
-            print(
-                f"Epoch {epoch:03d} | Train: {tr_loss:.4f} | "
-                f"Val: {v['loss']:.4f} | DSC: {v['dsc']:.4f} | "
-                f"IoU: {v['iou']:.4f} | Best: {trainer.best_dsc:.4f}"
-            )
+        print(
+            f"Epoch {epoch:03d}/{num_epochs:03d} | Train: {tr_loss:.4f} | "
+            f"Val: {v['loss']:.4f} | DSC: {v['dsc']*100:.2f}% | "
+            f"IoU: {v['iou']*100:.2f}% | Best: {trainer.best_dsc*100:.2f}%"
+        )
     return trainer.best_dsc
 
 

@@ -1,97 +1,65 @@
-"""Streaming pipeline: download 1 patient -> crop int16 HU patch -> delete DICOM."""
+"""Streaming pipeline: download matching CT series -> crop int16 HU patches -> delete DICOM."""
 
 from pathlib import Path
 import shutil
-from typing import List, Optional
-import numpy as np
 import mus_net.data.numpy_compatibility  # noqa: F401
+from mus_net.data.nodule_slice_extractor import NoduleSliceExtractor
 from mus_net.data.tcia_downloader import TciaPatientScanDownloader
 
 
 class StreamingLidcPreprocessor:
-    """Processes LIDC-IDRI scans per-patient, keeping Colab disk usage under 500MB."""
+    """Processes LIDC-IDRI scans per patient, keeping Colab disk usage small."""
 
     def __init__(self, output_dir: Path, temp_dir: Path, patch_size: int = 128) -> None:
-        """Initialize paths, patch dimensions, tracker file, and TCIA client."""
+        """Initialize paths, tracker files, slice extractor, and TCIA client."""
         self.output_dir, self.temp_dir = output_dir, temp_dir
-        self.patch_size = patch_size
         self.downloader = TciaPatientScanDownloader()
+        self.extractor = NoduleSliceExtractor(output_dir, patch_size)
         self.output_dir.mkdir(parents=True, exist_ok=True)
         self.tracker_file = self.output_dir / "processed_patients.txt"
+        self.failure_file = self.output_dir / "failed_patients.txt"
 
     def is_patient_processed(self, patient_id: str) -> bool:
-        """Check if patient has existing .npz files or is logged in tracker file."""
-        if any(self.output_dir.glob(f"{patient_id}_nodule_*.npz")):
+        """Check if patient has new-format .npz files or is logged as finished."""
+        if any(self.output_dir.glob(f"{patient_id}_scan*.npz")):
             return True
         if self.tracker_file.exists():
             return patient_id in set(self.tracker_file.read_text(encoding="utf-8").splitlines())
         return False
 
-    def mark_patient_done(self, patient_id: str) -> None:
-        """Record patient ID in persistent tracker file on Drive."""
-        with open(self.tracker_file, "a", encoding="utf-8") as f:
-            f.write(f"{patient_id}\n")
+    def _append_line(self, file_path: Path, text: str) -> None:
+        """Append one line to a tracker file on Drive."""
+        with open(file_path, "a", encoding="utf-8") as file_handle:
+            file_handle.write(f"{text}\n")
 
     def process_patient(self, patient_id: str) -> int:
-        """Download scan, crop 1st annotation 2D patches, clean up temp DICOM safely."""
+        """Process all pylidc scans of a patient; failures are logged, not marked done."""
         if self.is_patient_processed(patient_id):
             return 0
         try:
-            return self._download_and_extract(patient_id)
-        except Exception as error:
-            print(f"Warning: Patient {patient_id} encountered error: {error}. Skipping safely.")
-            self.mark_patient_done(patient_id)
+            count = self._process_all_scans(patient_id)
+        except Exception as error:  # noqa: BLE001
+            print(f"Warning: {patient_id} failed: {error}. Logged for retry.")
+            self._append_line(self.failure_file, f"{patient_id}\t{error}")
             return 0
-
-    def _download_and_extract(self, patient_id: str) -> int:
-        """Internal helper handling download, series matching, and patch extraction."""
-        uids = self.downloader.get_ct_series_uids(patient_id)
-        if not uids:
-            self.mark_patient_done(patient_id)
-            return 0
-
-        patient_temp = self.temp_dir / patient_id
-        if not self.downloader.download_series_dicom(uids[0], patient_temp):
-            shutil.rmtree(patient_temp, ignore_errors=True)
-            self.mark_patient_done(patient_id)
-            return 0
-
-        try:
-            extracted_count = self._extract_patches_from_dicom(patient_temp, patient_id)
-        finally:
-            shutil.rmtree(patient_temp, ignore_errors=True)
-        self.mark_patient_done(patient_id)
-        return extracted_count
-
-    def _extract_patches_from_dicom(self, dicom_dir: Path, patient_id: str) -> int:
-        """Extract int16 HU patches using 1st annotation via pylidc (loads volume once)."""
-        import pylidc as pl
-        (Path.home() / ".pylidcrc").write_text(f"[dicom]\npath = {dicom_dir.parent}\nwarn = False\n")
-
-        scan = pl.query(pl.Scan).filter(pl.Scan.patient_id == patient_id).first()
-        if not scan:
-            return 0
-        vol, count, half = scan.to_volume(), 0, self.patch_size // 2
-
-        for n_idx, annotations in enumerate(scan.cluster_annotations()):
-            if not annotations:
-                continue
-            first_ann = annotations[0]
-            mask_3d, bbox = first_ann.boolean_mask(), first_ann.bbox()
-
-            for z in range(mask_3d.shape[2]):
-                if mask_3d[:, :, z].sum() == 0:
-                    continue
-                slice_hu = vol[:, :, bbox[2].start + z]
-                cy, cx = int((bbox[0].start + bbox[0].stop) / 2), int((bbox[1].start + bbox[1].stop) / 2)
-                y1, y2, x1, x2 = max(0, cy - half), min(slice_hu.shape[0], cy + half), max(0, cx - half), min(slice_hu.shape[1], cx + half)
-                pad_w = ((half - (cy - y1), half - (y2 - cy)), (half - (cx - x1), half - (x2 - cx)))
-
-                patch = np.pad(slice_hu[y1:y2, x1:x2], pad_w, mode="edge")
-                full_m = np.zeros_like(slice_hu, dtype=np.uint8)
-                full_m[bbox[0], bbox[1]] = mask_3d[:, :, z]
-                mask_p = np.pad(full_m[y1:y2, x1:x2], pad_w, mode="constant")
-                out_name = f"{patient_id}_nodule_{n_idx}_slice_{bbox[2].start + z}.npz"
-                np.savez_compressed(self.output_dir / out_name, hu_patch=patch.astype(np.int16), mask=mask_p, patient_id=patient_id)
-                count += 1
+        self._append_line(self.tracker_file, patient_id)
         return count
+
+    def _process_all_scans(self, patient_id: str) -> int:
+        """Download exactly the series referenced by pylidc annotations and extract slices."""
+        import pylidc as pl
+
+        (Path.home() / ".pylidcrc").write_text(f"[dicom]\npath = {self.temp_dir}\nwarn = False\n")
+        scans = pl.query(pl.Scan).filter(pl.Scan.patient_id == patient_id).all()
+        total = 0
+        for scan in scans:
+            if not scan.annotations:
+                continue
+            series_dir = self.temp_dir / patient_id / scan.series_instance_uid
+            if not self.downloader.download_series_dicom(scan.series_instance_uid, series_dir):
+                raise RuntimeError(f"download failed for series {scan.series_instance_uid}")
+            try:
+                total += self.extractor.extract(scan)
+            finally:
+                shutil.rmtree(self.temp_dir / patient_id, ignore_errors=True)
+        return total

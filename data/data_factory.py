@@ -6,6 +6,7 @@ import numpy as np
 from torch.utils.data import DataLoader
 from mus_net.data.lidc_dataset import LidcIdriSegmentationDataset
 from mus_net.data.patient_splitter import PatientWiseCrossValidationSplitter
+from mus_net.data.sample_repository import LidcSampleRepository
 from mus_net.data.windowing import ComputedTomographyWindowTransformer
 
 
@@ -32,18 +33,16 @@ def prepare_fold_dataloaders(
     fold_index: int,
 ) -> Tuple[DataLoader, DataLoader]:
     """Build train and validation DataLoaders for a specific cross-validation fold."""
-    data_dir = Path(config["dataset"]["data_directory"])
-    samples: List[Dict[str, Any]] = []
+    dataset_config = config["dataset"]
+    repository = LidcSampleRepository(
+        Path(dataset_config["data_directory"]),
+        min_annotators=dataset_config.get("min_annotators", 1),
+        min_diameter_mm=dataset_config.get("min_diameter_mm"),
+        max_diameter_mm=dataset_config.get("max_diameter_mm"),
+    )
+    samples: List[Dict[str, Any]] = repository.load() if repository.has_data() else []
 
-    if data_dir.exists() and list(data_dir.glob("*.npz")):
-        for file_path in sorted(data_dir.glob("*.npz")):
-            data = np.load(file_path)
-            samples.append({
-                "hu_patch": data["hu_patch"],
-                "mask": data["mask"],
-                "patient_id": str(data.get("patient_id", file_path.stem)),
-            })
-    else:
+    if not samples:
         # Fallback to reproducible synthetic samples if raw LIDC is not yet extracted
         samples = create_synthetic_lidc_samples(num_samples=40, size=config["dataset"]["patch_size"])
 

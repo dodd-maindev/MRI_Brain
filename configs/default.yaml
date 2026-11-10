@@ -41,7 +41,7 @@ train:
   log_directory: "logs"
 
 evaluation:
-  normalized_surface_distance_tau: 1.0
+  normalized_surface_distance_tau: 2.0
   export_visualizations: true
   visualization_directory: "visualizations"
 

@@ -53,7 +53,7 @@ def execute_fold_training(config: dict, fold: int, reset: bool = False) -> float
         print(
             f"Epoch {epoch:03d}/{num_epochs:03d} | Train: {tr_loss:.4f} | "
             f"Val: {v['loss']:.4f} | DSC: {v['dsc']*100:.2f}% | "
-            f"IoU: {v['iou']*100:.2f}% | Best: {trainer.best_dsc*100:.2f}%"
+            f"IoU: {v['iou']*100:.2f}% | NSD: {v['nsd']*100:.2f}% | Best: {trainer.best_dsc*100:.2f}%"
         )
     return trainer.best_dsc
 

@@ -68,7 +68,7 @@ class MultiWindowSegmentationLoss(nn.Module):
 
         total_loss = self.alpha_1 * loss_ffm
         if active_count > 0:
-            total_loss = total_loss + self.alpha_2 * (branch_losses_sum / active_count)
+            total_loss = total_loss + self.alpha_2 * branch_losses_sum
 
         if self.use_posterior_kl and "latent_parameters" in model_outputs:
             kl_sum = torch.tensor(0.0, device=ground_truth_mask.device)

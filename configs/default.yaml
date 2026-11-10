@@ -15,7 +15,7 @@ model:
   base_channels: 32
   latent_dimension: 6
   beta: 1.0
-  attention_downsample_ratio: 2
+  attention_downsample_ratio: 1
   otsu_bins: 256
   otsu_straight_through: true
   gabor_frequencies: [0.25]
@@ -24,16 +24,16 @@ model:
 loss:
   alpha_1: 1.0
   alpha_2: 0.5
-  use_dice_loss: true
+  use_dice_loss: false
   dice_weight: 1.0
   bce_weight: 1.0
   use_posterior_kl: false
   kl_weight: 0.001
 
 train:
-  optimizer: "adam"
+  optimizer: "sgd"
   batch_size: 16
-  learning_rate: 0.0002
+  learning_rate: 0.0001
   momentum: 0.9
   epochs: 200
   enable_amp: false

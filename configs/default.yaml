@@ -24,16 +24,16 @@ model:
 loss:
   alpha_1: 1.0
   alpha_2: 0.5
-  use_dice_loss: false
+  use_dice_loss: true
   dice_weight: 1.0
   bce_weight: 1.0
   use_posterior_kl: false
   kl_weight: 0.001
 
 train:
-  optimizer: "sgd"
+  optimizer: "adam"
   batch_size: 16
-  learning_rate: 0.0001
+  learning_rate: 0.0002
   momentum: 0.9
   epochs: 200
   enable_amp: false

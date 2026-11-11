@@ -40,7 +40,7 @@ class PreprocessedDatasetAuditor:
 
     def run(self) -> None:
         """Inspect all .npz files and print comprehensive integrity and alignment report."""
-        files = sorted(self.data_directory.glob("*.npz"))
+        files = sorted(f for f in self.data_directory.glob("*.npz") if f.name != "lidc_packed_cache.npz")
         patients = Counter(f.stem.split("_")[0] for f in files)
         nodules = Counter(f.stem.rsplit("_slice", 1)[0] for f in files)
         areas, inside_hu, ring_hu, diffs, offsets, truncated = [], [], [], [], [], 0

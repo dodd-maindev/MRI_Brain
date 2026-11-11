@@ -1,15 +1,12 @@
 """Diagnostic script to isolate data-scale vs architecture bottlenecks."""
 
 from pathlib import Path
-import sys
+import sys, argparse, torch, yaml
 
 _parent = str(Path(__file__).resolve().parent.parent.parent)
 if _parent not in sys.path:
     sys.path.insert(0, _parent)
 
-import argparse
-import torch
-import yaml
 from mus_net.data.data_factory import prepare_fold_dataloaders
 from mus_net.metrics import SegmentationMetricAccumulator
 from mus_net.train import build_network_from_config
@@ -84,16 +81,19 @@ class CheckpointDiagnostic:
 
 def main() -> None:
     """CLI entry point for checkpoint diagnostics."""
-    parser = argparse.ArgumentParser(description="Diagnose trained MUS-Net checkpoint.")
-    parser.add_argument("--config", type=str, default="configs/default.yaml")
-    parser.add_argument("--data_dir", type=str, required=True)
-    parser.add_argument("--drive_dir", type=str, required=True)
-    parser.add_argument("--fold", type=int, default=0)
-    args = parser.parse_args()
+    p = argparse.ArgumentParser(description="Diagnose trained MUS-Net checkpoint.")
+    for arg, kwargs in [("--config", {"default": "configs/default.yaml"}), ("--data_dir", {"required": True}),
+                        ("--drive_dir", {"required": True}), ("--fold", {"type": int, "default": 0}),
+                        ("--min_annotators", {"type": int, "default": None})]:
+        p.add_argument(arg, **kwargs)
+    args = p.parse_args()
     with open(args.config, "r", encoding="utf-8") as f:
         config = yaml.safe_load(f)
     config["dataset"]["data_directory"] = args.data_dir
-    CheckpointDiagnostic(config, Path(args.drive_dir) / "checkpoints" / f"best_model_fold_{args.fold}.pth", args.fold).run()
+    if args.min_annotators is not None:
+        config["dataset"]["min_annotators"] = args.min_annotators
+    ckpt = Path(args.drive_dir) / "checkpoints" / f"best_model_fold_{args.fold}.pth"
+    CheckpointDiagnostic(config, ckpt, args.fold).run()
 
 
 if __name__ == "__main__":

@@ -40,7 +40,7 @@ train:
   batch_size: 16
   learning_rate: 0.0002
   momentum: 0.9
-  epochs: 200
+  epochs: 100
   enable_amp: false
   checkpoint_directory: "checkpoints"
   log_directory: "logs"

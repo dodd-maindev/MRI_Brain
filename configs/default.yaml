@@ -10,8 +10,9 @@ dataset:
   mediastinal_window_level: 40.0
   mediastinal_window_width: 400.0
   data_directory: "data/lidc_preprocessed"
-  # Nodule selection matching paper Section 4.1: all 2635 annotated nodules.
-  min_annotators: 1
+  # Nodule selection (UGS-Net protocol by the same authors: 3-30 mm, >= 2 readers).
+  # Matches paper Table 1 subset (9,727 slices).
+  min_annotators: 2
   min_diameter_mm: 3.0
   max_diameter_mm: 30.0
 
@@ -35,9 +36,9 @@ loss:
   kl_weight: 0.001
 
 train:
-  optimizer: "sgd"
+  optimizer: "adam"
   batch_size: 16
-  learning_rate: 0.0001
+  learning_rate: 0.0002
   momentum: 0.9
   epochs: 100
   enable_amp: false

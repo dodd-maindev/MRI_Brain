@@ -43,19 +43,18 @@ class MusNetTrainer:
     def resume_if_available(self) -> int:
         """Restore model and training state, prioritizing higher DSC checkpoint."""
         b_p, l_p = self.ckpt_dir / f"best_model_fold_{self.fold_idx}.pth", self.ckpt_dir / f"latest_model_fold_{self.fold_idx}.pth"
-        p = l_p if l_p.exists() else b_p
-        if b_p.exists() and l_p.exists():
-            c_b, c_l = torch.load(b_p, map_location="cpu"), torch.load(l_p, map_location="cpu")
-            p = b_p if c_b.get("best_dsc", -1) > c_l.get("best_dsc", -1) else l_p
+        p = b_p if b_p.exists() else l_p
         if not p.exists(): return 1
         ckpt = torch.load(p, map_location=self.device)
         self.model.load_state_dict(ckpt["model_state_dict"])
         self.best_dsc = ckpt.get("best_dsc", -1.0)
-        try:
-            self.optimizer.load_state_dict(ckpt["optimizer_state_dict"])
-            if "scheduler_state_dict" in ckpt: self.scheduler.load_state_dict(ckpt["scheduler_state_dict"])
-        except Exception: pass
-        return int(ckpt["epoch"]) + 1
+        opt_s = ckpt.get("optimizer_state_dict")
+        if opt_s and "param_groups" in opt_s and ("betas" in opt_s["param_groups"][0]) == isinstance(self.optimizer, optim.Adam):
+            try:
+                self.optimizer.load_state_dict(opt_s)
+                if "scheduler_state_dict" in ckpt: self.scheduler.load_state_dict(ckpt["scheduler_state_dict"])
+            except Exception: pass
+        return int(ckpt.get("epoch", 0)) + 1
 
     def train_epoch(self, dataloader: Any) -> float:
         """Execute one training epoch with learning rate annealing."""

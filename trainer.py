@@ -18,18 +18,15 @@ class MusNetTrainer:
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.model = model.to(self.device)
         lr, opt = config["train"]["learning_rate"], config["train"].get("optimizer", "adam").lower()
-        self.optimizer = (
-            optim.SGD(self.model.parameters(), lr=lr, momentum=config["train"].get("momentum", 0.9))
-            if opt == "sgd" else optim.Adam(self.model.parameters(), lr=lr)
-        )
+        self.optimizer = (optim.SGD(self.model.parameters(), lr=lr, momentum=config["train"].get("momentum", 0.9))
+                          if opt == "sgd" else optim.Adam(self.model.parameters(), lr=lr))
         self.scheduler = optim.lr_scheduler.CosineAnnealingLR(self.optimizer, T_max=config["train"]["epochs"], eta_min=1e-6)
         lc = config["loss"]
         self.criterion = MultiWindowSegmentationLoss(
-            lc["alpha_1"], lc["alpha_2"], lc.get("use_dice_loss", True),
-            lc.get("dice_weight", 1.0), lc.get("bce_weight", 1.0), lc["use_posterior_kl"], lc["kl_weight"]
+            lc["alpha_1"], lc["alpha_2"], lc.get("use_dice_loss", True), lc.get("dice_weight", 1.0),
+            lc.get("bce_weight", 1.0), lc["use_posterior_kl"], lc["kl_weight"]
         )
-        self.best_dsc = -1.0
-        self.ckpt_dir = Path(config["train"]["checkpoint_directory"])
+        self.best_dsc, self.ckpt_dir = -1.0, Path(config["train"]["checkpoint_directory"])
         self.ckpt_dir.mkdir(parents=True, exist_ok=True)
         self.log_file = Path(config["train"]["log_directory"]) / f"log_fold_{fold_idx}.csv"
         self.log_file.parent.mkdir(parents=True, exist_ok=True)
@@ -44,16 +41,21 @@ class MusNetTrainer:
             f.flush()
 
     def resume_if_available(self) -> int:
-        """Restore model, optimizer, scheduler, and epoch from Drive checkpoint."""
-        latest_path = self.ckpt_dir / f"latest_model_fold_{self.fold_idx}.pth"
-        if latest_path.exists():
-            ckpt = torch.load(latest_path, map_location=self.device)
-            self.model.load_state_dict(ckpt["model_state_dict"])
+        """Restore model and training state, prioritizing higher DSC checkpoint."""
+        b_p, l_p = self.ckpt_dir / f"best_model_fold_{self.fold_idx}.pth", self.ckpt_dir / f"latest_model_fold_{self.fold_idx}.pth"
+        p = l_p if l_p.exists() else b_p
+        if b_p.exists() and l_p.exists():
+            c_b, c_l = torch.load(b_p, map_location="cpu"), torch.load(l_p, map_location="cpu")
+            p = b_p if c_b.get("best_dsc", -1) > c_l.get("best_dsc", -1) else l_p
+        if not p.exists(): return 1
+        ckpt = torch.load(p, map_location=self.device)
+        self.model.load_state_dict(ckpt["model_state_dict"])
+        self.best_dsc = ckpt.get("best_dsc", -1.0)
+        try:
             self.optimizer.load_state_dict(ckpt["optimizer_state_dict"])
             if "scheduler_state_dict" in ckpt: self.scheduler.load_state_dict(ckpt["scheduler_state_dict"])
-            self.best_dsc = ckpt.get("best_dsc", -1.0)
-            return int(ckpt["epoch"]) + 1
-        return 1
+        except Exception: pass
+        return int(ckpt["epoch"]) + 1
 
     def train_epoch(self, dataloader: Any) -> float:
         """Execute one training epoch with learning rate annealing."""
@@ -89,8 +91,7 @@ class MusNetTrainer:
         """Persist latest and best checkpoints directly to Drive."""
         state = {
             "epoch": epoch, "model_state_dict": self.model.state_dict(),
-            "optimizer_state_dict": self.optimizer.state_dict(),
-            "scheduler_state_dict": self.scheduler.state_dict(),
+            "optimizer_state_dict": self.optimizer.state_dict(), "scheduler_state_dict": self.scheduler.state_dict(),
             "best_dsc": max(self.best_dsc, val_dsc), "val_dsc": val_dsc,
         }
         torch.save(state, self.ckpt_dir / f"latest_model_fold_{self.fold_idx}.pth")

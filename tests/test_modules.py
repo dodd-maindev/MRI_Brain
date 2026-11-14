@@ -44,12 +44,12 @@ def test_segmentation_metrics_perfect_and_empty() -> None:
 
     assert compute_dice_coefficient(gt, pred) == 1.0
     assert compute_intersection_over_union(gt, pred) == 1.0
-    assert compute_normalized_surface_distance(gt, pred, tau_threshold=1.0) == 1.0
+    assert compute_normalized_surface_distance(gt, pred, tau=1.0) == 1.0
 
     empty = np.zeros((64, 64), dtype=np.uint8)
     assert compute_dice_coefficient(gt, empty) == 0.0
     assert compute_intersection_over_union(gt, empty) == 0.0
-    assert compute_normalized_surface_distance(gt, empty, tau_threshold=1.0) == 0.0
+    assert compute_normalized_surface_distance(gt, empty, tau=1.0) == 0.0
 
 
 def test_loss_function_computation() -> None:

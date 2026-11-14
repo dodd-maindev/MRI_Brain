@@ -39,6 +39,15 @@ class LidcIdriSegmentationDataset(Dataset):
         k_rot = random.choice([0, 1, 2, 3])
         if k_rot > 0:
             hu_patch, mask = np.rot90(hu_patch, k=k_rot), np.rot90(mask, k=k_rot)
+        if random.random() > 0.5:
+            max_shift = 4
+            patch_height, patch_width = hu_patch.shape
+            padded_hu = np.pad(hu_patch, max_shift, mode="edge")
+            padded_mask = np.pad(mask, max_shift, mode="constant")
+            start_y = max_shift + random.randint(-max_shift, max_shift)
+            start_x = max_shift + random.randint(-max_shift, max_shift)
+            hu_patch = padded_hu[start_y : start_y + patch_height, start_x : start_x + patch_width]
+            mask = padded_mask[start_y : start_y + patch_height, start_x : start_x + patch_width]
         return np.ascontiguousarray(hu_patch), np.ascontiguousarray(mask)
 
     def __getitem__(self, index: int) -> Dict[str, Any]:

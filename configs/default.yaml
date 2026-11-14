@@ -15,6 +15,7 @@ dataset:
   min_annotators: 2
   min_diameter_mm: 3.0
   max_diameter_mm: 30.0
+  min_mask_area: 100
 
 model:
   base_channels: 32
@@ -39,6 +40,7 @@ train:
   optimizer: "adam"
   batch_size: 16
   learning_rate: 0.0002
+  weight_decay: 0.0001
   momentum: 0.9
   epochs: 100
   enable_amp: false
@@ -46,7 +48,7 @@ train:
   log_directory: "logs"
 
 evaluation:
-  normalized_surface_distance_tau: 2.0
+  normalized_surface_distance_tau: 3.0
   export_visualizations: true
   visualization_directory: "visualizations"
 

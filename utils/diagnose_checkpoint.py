@@ -84,14 +84,14 @@ def main() -> None:
     p = argparse.ArgumentParser(description="Diagnose trained MUS-Net checkpoint.")
     for arg, kwargs in [("--config", {"default": "configs/default.yaml"}), ("--data_dir", {"required": True}),
                         ("--drive_dir", {"required": True}), ("--fold", {"type": int, "default": 0}),
-                        ("--min_annotators", {"type": int, "default": None})]:
+                        ("--min_annotators", {"type": int, "default": None}), ("--min_mask_area", {"type": int, "default": None})]:
         p.add_argument(arg, **kwargs)
     args = p.parse_args()
     with open(args.config, "r", encoding="utf-8") as f:
         config = yaml.safe_load(f)
     config["dataset"]["data_directory"] = args.data_dir
-    if args.min_annotators is not None:
-        config["dataset"]["min_annotators"] = args.min_annotators
+    overrides = {k: getattr(args, k) for k in ("min_annotators", "min_mask_area") if getattr(args, k) is not None}
+    config["dataset"].update(overrides)
     ckpt = Path(args.drive_dir) / "checkpoints" / f"best_model_fold_{args.fold}.pth"
     CheckpointDiagnostic(config, ckpt, args.fold).run()
 

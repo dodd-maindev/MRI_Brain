@@ -18,8 +18,9 @@ class MusNetTrainer:
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.model = model.to(self.device)
         lr, opt = config["train"]["learning_rate"], config["train"].get("optimizer", "adam").lower()
-        self.optimizer = (optim.SGD(self.model.parameters(), lr=lr, momentum=config["train"].get("momentum", 0.9))
-                          if opt == "sgd" else optim.Adam(self.model.parameters(), lr=lr))
+        wd = config["train"].get("weight_decay", 1e-4)
+        self.optimizer = (optim.SGD(self.model.parameters(), lr=lr, momentum=config["train"].get("momentum", 0.9), weight_decay=wd)
+                          if opt == "sgd" else optim.Adam(self.model.parameters(), lr=lr, weight_decay=wd))
         self.scheduler = optim.lr_scheduler.CosineAnnealingLR(self.optimizer, T_max=config["train"]["epochs"], eta_min=1e-6)
         lc = config["loss"]
         self.criterion = MultiWindowSegmentationLoss(

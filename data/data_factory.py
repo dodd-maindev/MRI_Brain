@@ -10,6 +10,15 @@ from mus_net.data.sample_repository import LidcSampleRepository
 from mus_net.data.windowing import ComputedTomographyWindowTransformer
 
 
+def _center_mask_area(mask: np.ndarray, patch_size: int) -> int:
+    """Count positive nodule pixels inside the centered target crop."""
+    height, width = mask.shape[:2]
+    if patch_size and height > patch_size and width > patch_size:
+        start_y, start_x = (height - patch_size) // 2, (width - patch_size) // 2
+        mask = mask[start_y : start_y + patch_size, start_x : start_x + patch_size]
+    return int((mask > 0).sum())
+
+
 def create_synthetic_lidc_samples(num_samples: int = 50, size: int = 128) -> List[Dict[str, Any]]:
     """Generate deterministic synthetic HU CT patches and nodule masks for testing."""
     samples = []
@@ -69,6 +78,11 @@ def prepare_fold_dataloaders(
     val_data = [samples[i] for i in val_indices]
 
     p_size = config["dataset"].get("patch_size", 64)
+    min_area = int(dataset_config.get("min_mask_area") or 0)
+    if min_area > 0:
+        train_data = [s for s in train_data if _center_mask_area(s["mask"], p_size) >= min_area]
+        val_data = [s for s in val_data if _center_mask_area(s["mask"], p_size) >= min_area]
+
     train_dataset = LidcIdriSegmentationDataset(train_data, transformer, is_training=True, target_patch_size=p_size)
     val_dataset = LidcIdriSegmentationDataset(val_data, transformer, is_training=False, target_patch_size=p_size)
 

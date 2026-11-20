@@ -73,3 +73,16 @@ def test_full_mus_net_end_to_end_shape() -> None:
     assert outputs["branch_masks"]["raw"].shape == (2, 1, 128, 128)
     assert outputs["multi_window_mask"].shape == (2, 3, 128, 128)
 
+
+def test_amu_net_uncertainty_gate_and_soft_otsu_shape() -> None:
+    """Verify MWM-guided dynamic uncertainty gating and Soft-Otsu preserve shapes."""
+    inputs = {k: torch.randn(2, 1, 64, 64) for k in ["raw", "lung", "medias"]}
+    model = MultiWindowSegmentationNetwork(
+        base_channels=16, latent_dimension=6, use_uncertainty_gate=True, otsu_soft=True
+    )
+    outputs = model(inputs)
+    assert outputs["final_prediction"].shape == (2, 1, 64, 64)
+    assert set(outputs["window_weights"].keys()) == {"lung", "medias", "raw"}
+    weight_sum = sum(outputs["window_weights"].values())
+    assert torch.allclose(weight_sum, torch.ones(2, 1, 64, 64), atol=1e-5)
+

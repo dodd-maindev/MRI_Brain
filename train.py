@@ -29,6 +29,9 @@ def build_network_from_config(config: dict) -> MultiWindowSegmentationNetwork:
         active_branches=config["ablation"]["active_branches"],
         use_uim=config["ablation"]["use_uncertainty_indication_module"],
         use_ffm=config["ablation"]["use_feature_filter_module"],
+        use_uncertainty_gate=config["ablation"].get("use_uncertainty_gate", False),
+        otsu_soft=config["model"].get("otsu_soft", False),
+        otsu_temperature=config["model"].get("otsu_temperature", 8.0),
     )
 
 
@@ -53,7 +56,8 @@ def execute_fold_training(config: dict, fold: int, reset: bool = False) -> float
         print(
             f"Epoch {epoch:03d}/{num_epochs:03d} | Train: {tr_loss:.4f} | "
             f"Val: {v['loss']:.4f} | DSC: {v['dsc']*100:.2f}% | "
-            f"IoU: {v['iou']*100:.2f}% | NSD: {v['nsd']*100:.2f}% | Best: {trainer.best_dsc*100:.2f}%"
+            f"IoU: {v['iou']*100:.2f}% | NSD: {v['nsd']*100:.2f}% | Best: {trainer.best_dsc*100:.2f}%",
+            flush=True,
         )
     return trainer.best_dsc
 

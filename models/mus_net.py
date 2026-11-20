@@ -6,6 +6,7 @@ import torch.nn as nn
 from mus_net.models.prob_attention_unet import ProbabilisticAttentionUNet
 from mus_net.models.uim import UncertaintyIndicationModule, compute_multi_window_mask
 from mus_net.models.ffm import FeatureFilterBranch
+from mus_net.models.uncertainty_gate import CrossWindowUncertaintyGate
 from mus_net.models.unet_blocks import ConvolutionalBlock
 
 
@@ -24,12 +25,14 @@ class MultiWindowSegmentationNetwork(nn.Module):
         active_branches: Optional[List[str]] = None,
         use_uim: bool = True,
         use_ffm: bool = True,
+        use_uncertainty_gate: bool = False,
+        otsu_soft: bool = False,
+        otsu_temperature: float = 8.0,
     ) -> None:
-        """Initialize all branches, filters, and fusion head."""
+        """Initialize all branches, filters, optional uncertainty gate, and fusion head."""
         super().__init__()
         self.active_branches = active_branches or ["lung", "medias", "raw"]
-        self.use_uim = use_uim
-        self.use_ffm = use_ffm
+        self.use_uim, self.use_ffm, self.use_uncertainty_gate = use_uim, use_ffm, use_uncertainty_gate
         c_fem = base_channels + latent_dimension
 
         self.fem = nn.ModuleDict({
@@ -42,9 +45,10 @@ class MultiWindowSegmentationNetwork(nn.Module):
         })
         filter_types = {"lung": lung_filter, "medias": medias_filter, "raw": raw_filter}
         self.ffm = nn.ModuleDict({
-            b: FeatureFilterBranch(base_channels, filter_types[b], beta, attention_downsample_ratio)
+            b: FeatureFilterBranch(base_channels, filter_types[b], beta, attention_downsample_ratio, otsu_soft, otsu_temperature)
             for b in ["lung", "medias", "raw"]
         })
+        self.uncertainty_gate = CrossWindowUncertaintyGate(base_channels, self.active_branches) if use_uncertainty_gate else None
 
         num_active = len(self.active_branches)
         # Eq. 22: R = concat(y_i, f_i) across active branches
@@ -75,8 +79,11 @@ class MultiWindowSegmentationNetwork(nn.Module):
         ]
         f_features = [f_maps[b] for b in self.active_branches]
 
-        # Fusion across active branches (Eq. 22)
-        fused_tensor = torch.cat(y_features + f_features, dim=1)
+        # Fusion across active branches (Eq. 22 or MWM-guided dynamic uncertainty gating)
+        if self.uncertainty_gate is not None and self.use_uim:
+            fused_tensor, window_weights, _ = self.uncertainty_gate(y_features, f_features, masks)
+        else:
+            fused_tensor, window_weights = torch.cat(y_features + f_features, dim=1), None
         final_prediction = self.fusion_head(fused_tensor)
 
         mwm = None
@@ -88,5 +95,6 @@ class MultiWindowSegmentationNetwork(nn.Module):
             "branch_masks": masks,
             "latent_parameters": latent_params,
             "multi_window_mask": mwm,
+            "window_weights": window_weights,
         }
 

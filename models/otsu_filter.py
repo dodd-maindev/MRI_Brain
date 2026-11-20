@@ -5,13 +5,21 @@ import torch.nn as nn
 
 
 class OtsuThresholdFilter(nn.Module):
-    """Batch-vectorized Otsu optimal thresholding module with STE support."""
+    """Batch-vectorized Otsu optimal thresholding module with Soft-Otsu and STE support."""
 
-    def __init__(self, number_of_bins: int = 256, straight_through: bool = True) -> None:
-        """Initialize number of bins and gradient estimation flag."""
+    def __init__(
+        self,
+        number_of_bins: int = 256,
+        straight_through: bool = True,
+        soft_mode: bool = False,
+        temperature: float = 8.0,
+    ) -> None:
+        """Initialize number of bins, gradient estimation flag, and soft-threshold temperature."""
         super().__init__()
         self.number_of_bins = number_of_bins
         self.straight_through = straight_through
+        self.soft_mode = soft_mode
+        self.temperature = temperature
 
     def forward(self, input_tensor: torch.Tensor) -> torch.Tensor:
         """Compute Otsu threshold per channel and return binary mask with gradients."""
@@ -58,8 +66,10 @@ class OtsuThresholdFilter(nn.Module):
         best_threshold_indices = torch.argmax(
             sigma_b_squared[:, :, :-1], dim=-1
         ).unsqueeze(-1).unsqueeze(-1)
-        binary_output = (scaled > best_threshold_indices.float()).float()
+        if self.soft_mode:
+            return torch.sigmoid((scaled - best_threshold_indices.float()) / self.temperature)
 
+        binary_output = (scaled > best_threshold_indices.float()).float()
         if self.straight_through:
             # ASSUMPTION: Straight-through estimator allows gradients to flow to d_i
             return binary_output + (input_tensor - input_tensor.detach())

@@ -57,6 +57,8 @@ class FeatureFilterBranch(nn.Module):
         filter_type: str = "sobel",
         beta: float = 1.0,
         downsample_ratio: int = 4,
+        otsu_soft: bool = False,
+        otsu_temperature: float = 8.0,
     ) -> None:
         """Initialize attention and domain-specific filter."""
         super().__init__()
@@ -64,7 +66,7 @@ class FeatureFilterBranch(nn.Module):
         self.attention = SpatialSelfAttention(channels, downsample_ratio)
         filter_map = {
             "sobel": SobelFilter(),
-            "otsu": OtsuThresholdFilter(),
+            "otsu": OtsuThresholdFilter(soft_mode=otsu_soft, temperature=otsu_temperature),
             "gabor": GaborFilterBankModule(channels),
             "laplacian": LaplacianFilter(),
             "none": nn.Identity(),

@@ -33,6 +33,9 @@ loss:
   use_dice_loss: true
   dice_weight: 1.0
   bce_weight: 1.0
+  boundary_weight: 0.5
+  tversky_weight: 0.5
+  use_uncertainty_aux: true
   use_posterior_kl: false
   kl_weight: 0.001
 
@@ -60,3 +63,4 @@ ablation:
   use_uncertainty_indication_module: true
   use_feature_filter_module: true
   use_uncertainty_gate: true
+  use_adaptive_window: true

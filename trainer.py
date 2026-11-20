@@ -25,12 +25,12 @@ class MusNetTrainer:
         lc = config["loss"]
         self.criterion = MultiWindowSegmentationLoss(
             lc["alpha_1"], lc["alpha_2"], lc.get("use_dice_loss", True), lc.get("dice_weight", 1.0),
-            lc.get("bce_weight", 1.0), lc["use_posterior_kl"], lc["kl_weight"]
+            lc.get("bce_weight", 1.0), lc["use_posterior_kl"], lc["kl_weight"],
+            lc.get("boundary_weight", 0.0), lc.get("tversky_weight", 0.0), lc.get("use_uncertainty_aux", False),
         )
         self.best_dsc, self.ckpt_dir = -1.0, Path(config["train"]["checkpoint_directory"])
         self.ckpt_dir.mkdir(parents=True, exist_ok=True)
-        self.log_file = Path(config["train"]["log_directory"]) / f"log_fold_{fold_idx}.csv"
-        self.log_file.parent.mkdir(parents=True, exist_ok=True)
+        self.log_file = Path(config["train"]["log_directory"]) / f"log_fold_{fold_idx}.csv"; self.log_file.parent.mkdir(parents=True, exist_ok=True)
         if not self.log_file.exists():
             with open(self.log_file, "w", newline="", encoding="utf-8") as f:
                 csv.writer(f).writerow(["epoch", "train_loss", "val_loss", "val_dsc", "val_iou", "val_nsd"])

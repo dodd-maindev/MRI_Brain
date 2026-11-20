@@ -30,6 +30,7 @@ def build_network_from_config(config: dict) -> MultiWindowSegmentationNetwork:
         use_uim=config["ablation"]["use_uncertainty_indication_module"],
         use_ffm=config["ablation"]["use_feature_filter_module"],
         use_uncertainty_gate=config["ablation"].get("use_uncertainty_gate", False),
+        use_adaptive_window=config["ablation"].get("use_adaptive_window", False),
         otsu_soft=config["model"].get("otsu_soft", False),
         otsu_temperature=config["model"].get("otsu_temperature", 8.0),
     )

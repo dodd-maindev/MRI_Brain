@@ -20,6 +20,9 @@ model:
   latent_dimension: 6
   beta: 1.0
   attention_downsample_ratio: 1
+  unet_stages: 4
+  use_aspp_bottleneck: true
+  dropout_rate: 0.15
   otsu_bins: 256
   otsu_straight_through: true
   otsu_soft: true
@@ -33,8 +36,8 @@ loss:
   use_dice_loss: true
   dice_weight: 1.0
   bce_weight: 1.0
-  boundary_weight: 0.5
-  tversky_weight: 0.5
+  boundary_weight: 0.2
+  tversky_weight: 0.3
   use_uncertainty_aux: true
   use_posterior_kl: false
   kl_weight: 0.001
@@ -52,6 +55,7 @@ train:
 
 evaluation:
   normalized_surface_distance_tau: 3.0
+  use_tta: true
   export_visualizations: true
   visualization_directory: "visualizations_amu"
 

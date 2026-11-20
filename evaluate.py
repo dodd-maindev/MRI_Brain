@@ -10,10 +10,13 @@ from mus_net.metrics import SegmentationMetricAccumulator
 from mus_net.train import build_network_from_config
 from mus_net.utils.gradcam import GradCamExplainer
 from mus_net.utils.q1_metrics import compute_calibration_and_aurc, compute_slice_hd95
+from mus_net.utils.tta import predict_with_d4_tta
 from mus_net.utils.visualize import save_segmentation_comparison
 
 
-def evaluate_single_fold(model: torch.nn.Module, val_loader: any, tau: float, threshold: float = 0.5) -> dict:
+def evaluate_single_fold(
+    model: torch.nn.Module, val_loader: any, tau: float, threshold: float = 0.5, use_tta: bool = False
+) -> dict:
     """Compute Global Volumetric, Macro, HD95, ECE, and AURC on a validation fold."""
     device = next(model.parameters()).device
     model.eval()
@@ -23,8 +26,7 @@ def evaluate_single_fold(model: torch.nn.Module, val_loader: any, tau: float, th
         inputs = {k: batch[k].to(device) for k in ["raw", "lung", "medias"]}
         masks = batch["mask"].to(device)
         with torch.no_grad():
-            outputs = model(inputs)
-        pred = outputs["final_prediction"]
+            pred = predict_with_d4_tta(model, inputs, enabled=use_tta)
         accumulator.update(masks, pred)
         p_np, g_np = pred.cpu().numpy(), masks.cpu().numpy()
         probs_list.append(p_np); gts_list.append(g_np)
@@ -70,9 +72,9 @@ def main() -> None:
     vis_dir = Path(config["evaluation"]["visualization_directory"])
     ckpt_dir = Path(config["train"]["checkpoint_directory"])
 
-    print(f"\nEvaluating with Threshold = {args.threshold:.2f} (Paper Table 1 + Q1 Metrics)")
+    use_tta = bool(config["evaluation"].get("use_tta", False))
+    print(f"\nEvaluating with Threshold = {args.threshold:.2f}, TTA = {use_tta} (Q1 Metrics)")
     print("| Fold | DSC (%) | IoU (%) | NSD (%) | HD95 | ECE | AURC | Macro DSC |\n|------|---------|---------|---------|------|-----|------|-----------|")
-
     fold_metrics = []
     for f in range(config["dataset"]["num_folds"]):
         ckpt_path = ckpt_dir / f"best_model_fold_{f}.pth"
@@ -81,12 +83,11 @@ def main() -> None:
         model = build_network_from_config(config).to(device)
         model.load_state_dict(torch.load(ckpt_path, map_location=device)["model_state_dict"])
         _, val_loader = prepare_fold_dataloaders(config, f)
-        res = evaluate_single_fold(model, val_loader, tau, args.threshold)
+        res = evaluate_single_fold(model, val_loader, tau, args.threshold, use_tta=use_tta)
         fold_metrics.append(res)
         print(f"| {f:4d} | {res['global_dsc']*100:7.2f} | {res['global_iou']*100:7.2f} | {res['nsd']*100:7.2f} | {res['hd95']:4.2f} | {res['ece']:.4f} | {res['aurc']:.4f} | {res['macro_dsc']*100:9.2f} |")
         if f == 0 and config["evaluation"]["export_visualizations"]:
             export_sample_visualizations(model, val_loader, vis_dir)
-
     if fold_metrics:
         m_d, s_d = np.mean([m["global_dsc"] for m in fold_metrics]) * 100, np.std([m["global_dsc"] for m in fold_metrics]) * 100
         m_i, m_n = np.mean([m["global_iou"] for m in fold_metrics]) * 100, np.mean([m["nsd"] for m in fold_metrics]) * 100

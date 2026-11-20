@@ -2,18 +2,25 @@
 
 import torch
 import torch.nn as nn
+from mus_net.models.aspp_bottleneck import MultiScaleASPPBottleneck
 from mus_net.models.unet_blocks import ConvolutionalBlock, UpConvolutionAttentionBlock
 
 
 class AttentionUNet(nn.Module):
-    """5-stage Attention U-Net extracting deep spatial feature representation r_i."""
+    """Configurable N-stage Attention U-Net with optional ASPP bottleneck."""
 
-    def __init__(self, in_channels: int = 1, base_channels: int = 32) -> None:
-        """Initialize encoder and decoder stages."""
+    def __init__(
+        self,
+        in_channels: int = 1,
+        base_channels: int = 32,
+        num_stages: int = 5,
+        use_aspp: bool = False,
+        dropout_rate: float = 0.0,
+    ) -> None:
+        """Initialize encoder, bottleneck (standard or ASPP), and decoder stages."""
         super().__init__()
         self.base_channels = base_channels
-        c = base_channels
-        channels = [c, c * 2, c * 4, c * 8, c * 16]
+        channels = [base_channels * (2**i) for i in range(num_stages)]
 
         self.initial_conv = ConvolutionalBlock(in_channels, channels[0])
         self.encoder_convs = nn.ModuleList([
@@ -21,7 +28,10 @@ class AttentionUNet(nn.Module):
             for i in range(len(channels) - 1)
         ])
         self.pool = nn.MaxPool2d(kernel_size=2, stride=2)
-        self.bottleneck = ConvolutionalBlock(channels[-1], channels[-1] * 2)
+        self.bottleneck = (
+            MultiScaleASPPBottleneck(channels[-1], channels[-1] * 2, dropout_rate)
+            if use_aspp else ConvolutionalBlock(channels[-1], channels[-1] * 2)
+        )
 
         self.up_blocks = nn.ModuleList([
             UpConvolutionAttentionBlock(

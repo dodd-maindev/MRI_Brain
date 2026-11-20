@@ -1,8 +1,10 @@
 """LIDC-IDRI 2D CT dataset loader with multi-window generation."""
 
+import math
 import random
 from typing import Any, Dict, List, Optional
 import numpy as np
+import scipy.ndimage as ndi
 import torch
 from torch.utils.data import Dataset
 from mus_net.data.windowing import ComputedTomographyWindowTransformer
@@ -39,6 +41,15 @@ class LidcIdriSegmentationDataset(Dataset):
         k_rot = random.choice([0, 1, 2, 3])
         if k_rot > 0:
             hu_patch, mask = np.rot90(hu_patch, k=k_rot), np.rot90(mask, k=k_rot)
+        if random.random() > 0.5:
+            angle = math.radians(random.uniform(-15.0, 15.0))
+            scale = random.uniform(0.85, 1.15)
+            c_a, s_a = math.cos(angle) / scale, math.sin(angle) / scale
+            matrix = np.array([[c_a, -s_a], [s_a, c_a]], dtype=np.float32)
+            center = np.array(hu_patch.shape, dtype=np.float32) / 2.0 - 0.5
+            offset = center - matrix @ center
+            hu_patch = ndi.affine_transform(hu_patch, matrix, offset=offset, order=1, mode="nearest")
+            mask = (ndi.affine_transform(mask, matrix, offset=offset, order=0, mode="constant") > 0.5).astype(np.float32)
         if random.random() > 0.5:
             max_shift = 4
             patch_height, patch_width = hu_patch.shape

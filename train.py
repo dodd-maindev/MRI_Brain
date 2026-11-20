@@ -33,6 +33,9 @@ def build_network_from_config(config: dict) -> MultiWindowSegmentationNetwork:
         use_adaptive_window=config["ablation"].get("use_adaptive_window", False),
         otsu_soft=config["model"].get("otsu_soft", False),
         otsu_temperature=config["model"].get("otsu_temperature", 8.0),
+        unet_stages=config["model"].get("unet_stages", 5),
+        use_aspp_bottleneck=config["model"].get("use_aspp_bottleneck", False),
+        dropout_rate=config["model"].get("dropout_rate", 0.0),
     )
 
 

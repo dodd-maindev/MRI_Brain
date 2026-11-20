@@ -30,6 +30,9 @@ class MultiWindowSegmentationNetwork(nn.Module):
         use_adaptive_window: bool = False,
         otsu_soft: bool = False,
         otsu_temperature: float = 8.0,
+        unet_stages: int = 5,
+        use_aspp_bottleneck: bool = False,
+        dropout_rate: float = 0.0,
     ) -> None:
         """Initialize all branches, filters, optional AdaWindow/uncertainty gate, and fusion head."""
         super().__init__()
@@ -37,7 +40,11 @@ class MultiWindowSegmentationNetwork(nn.Module):
         self.use_uim, self.use_ffm, self.use_uncertainty_gate = use_uim, use_ffm, use_uncertainty_gate
         self.adaptive_window = AdaptiveMultiWindowModule() if use_adaptive_window else None
         c_fem = base_channels + latent_dimension
-        self.fem = nn.ModuleDict({b: ProbabilisticAttentionUNet(1, base_channels, latent_dimension) for b in ["lung", "medias", "raw"]})
+        self.fem = nn.ModuleDict({
+            b: ProbabilisticAttentionUNet(
+                1, base_channels, latent_dimension, unet_stages, use_aspp_bottleneck, dropout_rate
+            ) for b in ["lung", "medias", "raw"]
+        })
         self.uim = nn.ModuleDict({b: UncertaintyIndicationModule(c_fem, base_channels) for b in ["lung", "medias", "raw"]})
         filter_types = {"lung": lung_filter, "medias": medias_filter, "raw": raw_filter}
         self.ffm = nn.ModuleDict({
@@ -82,15 +89,11 @@ class MultiWindowSegmentationNetwork(nn.Module):
             fused_tensor, window_weights = torch.cat(y_features + f_features, dim=1), None
         final_prediction = self.fusion_head(fused_tensor)
 
-        mwm = None
-        if "lung" in masks and "medias" in masks and masks["lung"] is not None:
-            mwm = compute_multi_window_mask(masks["lung"], masks["medias"])
-
+        mwm = compute_multi_window_mask(masks["lung"], masks["medias"]) if (
+            masks.get("lung") is not None and masks.get("medias") is not None
+        ) else None
         return {
-            "final_prediction": final_prediction,
-            "branch_masks": masks,
-            "latent_parameters": latent_params,
-            "multi_window_mask": mwm,
-            "window_weights": window_weights,
+            "final_prediction": final_prediction, "branch_masks": masks,
+            "latent_parameters": latent_params, "multi_window_mask": mwm, "window_weights": window_weights,
         }
 

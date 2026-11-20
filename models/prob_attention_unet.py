@@ -15,11 +15,15 @@ class ProbabilisticAttentionUNet(nn.Module):
         in_channels: int = 1,
         base_channels: int = 32,
         latent_dimension: int = 6,
+        num_stages: int = 5,
+        use_aspp: bool = False,
+        dropout_rate: float = 0.0,
     ) -> None:
         """Initialize Attention U-Net and PriorNet."""
         super().__init__()
         self.attention_unet = AttentionUNet(
-            in_channels=in_channels, base_channels=base_channels
+            in_channels=in_channels, base_channels=base_channels,
+            num_stages=num_stages, use_aspp=use_aspp, dropout_rate=dropout_rate,
         )
         self.prior_net = PriorNet(
             in_channels=in_channels, latent_dimension=latent_dimension

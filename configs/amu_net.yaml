@@ -48,9 +48,9 @@ loss:
 train:
   optimizer: "adamw"
   batch_size: 16
-  learning_rate: 0.0003
+  learning_rate: 0.0002
   weight_decay: 0.0001
-  warmup_epochs: 5
+  warmup_epochs: 2
   grad_clip: 1.0
   ema_decay: 0.995
   momentum: 0.9

@@ -70,6 +70,7 @@ def prepare_fold_dataloaders(
     val_data = [samples[i] for i in folds[fold_index]["validation_indices"]]
 
     p_size = dataset_config.get("patch_size", 64)
+    roi_size = dataset_config.get("roi_crop_size")
     use_25d = bool(dataset_config.get("use_25d", False))
     use_dual_fov = bool(dataset_config.get("use_dual_fov", False))
     if use_25d:
@@ -78,8 +79,8 @@ def prepare_fold_dataloaders(
     if min_area > 0:
         train_data = [s for s in train_data if _center_mask_area(s["mask"], p_size) >= min_area]
         val_data = [s for s in val_data if _center_mask_area(s["mask"], p_size) >= min_area]
-    train_dataset = LidcIdriSegmentationDataset(train_data, transformer, True, p_size, use_25d, use_dual_fov)
-    val_dataset = LidcIdriSegmentationDataset(val_data, transformer, False, p_size, use_25d, use_dual_fov)
+    train_dataset = LidcIdriSegmentationDataset(train_data, transformer, True, p_size, use_25d, use_dual_fov, roi_size)
+    val_dataset = LidcIdriSegmentationDataset(val_data, transformer, False, p_size, use_25d, use_dual_fov, roi_size)
 
     batch_size = config["train"]["batch_size"]
     train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, drop_last=True)

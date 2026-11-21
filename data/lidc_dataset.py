@@ -2,7 +2,7 @@
 
 import math
 import random
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 import numpy as np
 import scipy.ndimage as ndi
 import torch
@@ -14,29 +14,28 @@ class LidcIdriSegmentationDataset(Dataset):
     """Dataset delivering multi-window (2D or 2.5D + Dual-FOV) CT slices and masks."""
 
     def __init__(
-        self,
-        samples: List[Dict[str, Any]],
-        window_transformer: ComputedTomographyWindowTransformer,
-        is_training: bool = False,
-        target_patch_size: int = 64,
-        use_25d: bool = False,
-        use_dual_fov: bool = False,
+        self, samples: List[Dict[str, Any]], window_transformer: ComputedTomographyWindowTransformer,
+        is_training: bool = False, target_patch_size: int = 64, use_25d: bool = False,
+        use_dual_fov: bool = False, roi_crop_size: Optional[int] = None,
     ) -> None:
-        """Initialize dataset with sample list, window transformer, and context flags."""
+        """Initialize dataset with sample list, window transformer, and ROI magnification."""
         self.samples, self.transformer = samples, window_transformer
         self.is_training, self.target_size = is_training, target_patch_size
-        self.use_25d, self.use_dual_fov = use_25d, use_dual_fov
+        self.use_25d, self.use_dual_fov, self.roi_size = use_25d, use_dual_fov, roi_crop_size
 
     def __len__(self) -> int:
         """Return total sample count."""
         return len(self.samples)
 
     def _crop_center(self, arr: np.ndarray) -> np.ndarray:
-        """Center-crop a 2D array to target_size if larger."""
-        if self.target_size and arr.shape[0] > self.target_size:
+        """Center-crop to roi_size (or target_size) and resize to target_size."""
+        crop_s = self.roi_size or self.target_size
+        if crop_s and arr.shape[0] > crop_s:
             h, w = arr.shape
-            sy, sx = (h - self.target_size) // 2, (w - self.target_size) // 2
-            return arr[sy : sy + self.target_size, sx : sx + self.target_size]
+            sy, sx = (h - crop_s) // 2, (w - crop_s) // 2
+            arr = arr[sy : sy + crop_s, sx : sx + crop_s]
+        if self.target_size and arr.shape[0] != self.target_size:
+            arr = ndi.zoom(arr, self.target_size / float(arr.shape[0]), order=1).astype(np.float32)
         return arr
 
     def _downsample_global(self, hu_full: np.ndarray) -> np.ndarray:
@@ -76,7 +75,7 @@ class LidcIdriSegmentationDataset(Dataset):
         """Build [C, H, W] multi-window tensors (2D or 2.5D + Dual-FOV) and mask."""
         item = self.samples[index]
         hu_full = item["hu_patch"].astype(np.float32)
-        mask = self._crop_center((item["mask"] > 0).astype(np.float32))
+        mask = (self._crop_center((item["mask"] > 0).astype(np.float32)) >= 0.5).astype(np.float32)
         channels = (
             [self._crop_center(item.get("prev_hu", hu_full).astype(np.float32)),
              self._crop_center(hu_full),

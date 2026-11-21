@@ -13,7 +13,8 @@ dataset:
   min_annotators: 2
   min_diameter_mm: 3.0
   max_diameter_mm: 30.0
-  min_mask_area: 100
+  min_mask_area: 200
+  roi_crop_size: 48
   use_25d: true
   use_dual_fov: true
 
@@ -34,7 +35,7 @@ model:
 
 loss:
   alpha_1: 1.0
-  alpha_2: 0.5
+  alpha_2: 0.25
   use_dice_loss: true
   dice_weight: 1.0
   bce_weight: 1.0

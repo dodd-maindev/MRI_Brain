@@ -1,12 +1,13 @@
 """Loads preprocessed LIDC .npz slices with single-file caching and nodule filtering."""
 
-import os
+import os, re
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 import numpy as np
 
 CACHE_FILENAME = "lidc_packed_cache.npz"
 CACHE_25D_FILENAME = "lidc_packed_cache_25d.npz"
+SLICE_PATTERN = re.compile(r"^(.*)_slice(\d+)\.npz$")
 
 
 class LidcSampleRepository:
@@ -31,26 +32,37 @@ class LidcSampleRepository:
 
     def _is_selected(self, num_annotators: int, diameter_mm: float) -> bool:
         """Apply nodule criteria; negative sentinel values mean metadata is absent."""
-        if num_annotators >= 0 and num_annotators < self.min_annotators:
-            return False
+        if num_annotators >= 0 and num_annotators < self.min_annotators: return False
         if diameter_mm >= 0.0:
-            if self.min_diameter_mm is not None and diameter_mm < self.min_diameter_mm:
-                return False
-            if self.max_diameter_mm is not None and diameter_mm > self.max_diameter_mm:
-                return False
+            if self.min_diameter_mm is not None and diameter_mm < self.min_diameter_mm: return False
+            if self.max_diameter_mm is not None and diameter_mm > self.max_diameter_mm: return False
         return True
 
+    @staticmethod
+    def _parse_25d_from_filenames(data_dir: Path, count: int) -> Optional[Tuple[List[str], List[int]]]:
+        """Extract (nodule_key, slice_z) from sorted slice filenames without opening files."""
+        with os.scandir(data_dir) as entries:
+            names = sorted(e.name for e in entries if e.name.endswith(".npz") and not e.name.startswith("lidc_packed_cache"))
+        if len(names) != count:
+            return None
+        matches = [SLICE_PATTERN.match(n) for n in names]
+        return ([m.group(1) if m else n for m, n in zip(matches, names)],
+                [int(m.group(2)) if m else i for i, m in enumerate(matches)])
+
     def _load_from_cache(self, cache_path: Path) -> Tuple[List[Dict[str, Any]], int]:
-        """Load pre-packed dataset cache (2.5D if available) in a single I/O operation."""
+        """Load pre-packed dataset cache (with fast 2.5D index lookup) in one I/O op."""
         print(f"Loading fast dataset cache from {cache_path.name}...", flush=True)
         with np.load(cache_path) as cache:
             hus, masks = cache["hu_patches"], cache["masks"]
             pids, anns, diams = cache["patient_ids"], cache["num_annotators"], cache["diameter_mm"]
             nkeys = cache["nodule_keys"] if "nodule_keys" in cache else None
             zidxs = cache["slice_indices"] if "slice_indices" in cache else None
+        if nkeys is None:
+            parsed = self._parse_25d_from_filenames(self.data_directory, len(hus))
+            if parsed is not None: nkeys, zidxs = parsed
         return [
             {"hu_patch": hus[i], "mask": masks[i], "patient_id": str(pids[i]),
-             "nodule_key": str(nkeys[i]) if nkeys is not None else f"{pids[i]}_{i}",
+             "nodule_key": str(nkeys[i]) if nkeys is not None else f"{pids[i]}_{diams[i]:.2f}",
              "slice_z": int(zidxs[i]) if zidxs is not None else i}
             for i in range(len(hus)) if self._is_selected(int(anns[i]), float(diams[i]))
         ], len(hus)
@@ -83,9 +95,6 @@ class LidcSampleRepository:
         """Load slices (from cache if present) and filter by selection criteria."""
         c25 = self.data_directory / CACHE_25D_FILENAME
         cache_path = c25 if c25.exists() else self.data_directory / CACHE_FILENAME
-        samples, total = (
-            self._load_from_cache(cache_path) if cache_path.exists()
-            else self._load_individual_and_cache()
-        )
+        samples, total = self._load_from_cache(cache_path) if cache_path.exists() else self._load_individual_and_cache()
         print(f"Loaded {len(samples)}/{total} slices after nodule selection criteria.")
         return samples

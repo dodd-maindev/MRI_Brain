@@ -33,6 +33,7 @@ class MultiWindowSegmentationNetwork(nn.Module):
         unet_stages: int = 5,
         use_aspp_bottleneck: bool = False,
         dropout_rate: float = 0.0,
+        in_channels: int = 1,
     ) -> None:
         """Initialize all branches, filters, optional AdaWindow/uncertainty gate, and fusion head."""
         super().__init__()
@@ -42,7 +43,7 @@ class MultiWindowSegmentationNetwork(nn.Module):
         c_fem = base_channels + latent_dimension
         self.fem = nn.ModuleDict({
             b: ProbabilisticAttentionUNet(
-                1, base_channels, latent_dimension, unet_stages, use_aspp_bottleneck, dropout_rate
+                in_channels, base_channels, latent_dimension, unet_stages, use_aspp_bottleneck, dropout_rate
             ) for b in ["lung", "medias", "raw"]
         })
         self.uim = nn.ModuleDict({b: UncertaintyIndicationModule(c_fem, base_channels) for b in ["lung", "medias", "raw"]})

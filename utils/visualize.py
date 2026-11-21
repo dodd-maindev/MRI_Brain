@@ -19,9 +19,10 @@ def save_segmentation_comparison(
     num_columns = 8 if gradcam_heatmap is not None else 7
     fig, axes = plt.subplots(1, num_columns, figsize=(3 * num_columns, 3.5))
 
-    img_raw = inputs["raw"][0, 0].detach().cpu().numpy()
-    img_lung = inputs["lung"][0, 0].detach().cpu().numpy()
-    img_medias = inputs["medias"][0, 0].detach().cpu().numpy()
+    c_idx = 1 if inputs["raw"].shape[1] >= 3 else 0
+    img_raw = inputs["raw"][0, c_idx].detach().cpu().numpy()
+    img_lung = inputs["lung"][0, c_idx].detach().cpu().numpy()
+    img_medias = inputs["medias"][0, c_idx].detach().cpu().numpy()
     gt = ground_truth[0, 0].detach().cpu().numpy()
     final_pred = outputs["final_prediction"][0, 0].detach().cpu().numpy()
 

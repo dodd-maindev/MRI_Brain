@@ -10,6 +10,15 @@ from mus_net.data.sample_repository import LidcSampleRepository
 from mus_net.data.windowing import ComputedTomographyWindowTransformer
 
 
+def _attach_25d_neighbors(split_samples: List[Dict[str, Any]]) -> None:
+    """Attach (z-1, z+1) HU patches within the same split without cross-fold leakage."""
+    lookup = {(s.get("nodule_key", ""), s.get("slice_z", -999)): s["hu_patch"] for s in split_samples}
+    for s in split_samples:
+        key, z = s.get("nodule_key", ""), s.get("slice_z", -999)
+        s["prev_hu"] = lookup.get((key, z - 1), s["hu_patch"])
+        s["next_hu"] = lookup.get((key, z + 1), s["hu_patch"])
+
+
 def _center_mask_area(mask: np.ndarray, patch_size: int) -> int:
     """Count positive nodule pixels inside the centered target crop."""
     height, width = mask.shape[:2]
@@ -49,42 +58,28 @@ def prepare_fold_dataloaders(
         min_diameter_mm=dataset_config.get("min_diameter_mm"),
         max_diameter_mm=dataset_config.get("max_diameter_mm"),
     )
-    samples: List[Dict[str, Any]] = repository.load() if repository.has_data() else []
-
-    if not samples:
-        # Fallback to reproducible synthetic samples if raw LIDC is not yet extracted
-        samples = create_synthetic_lidc_samples(num_samples=40, size=config["dataset"]["patch_size"])
-
+    samples = repository.load() if repository.has_data() else create_synthetic_lidc_samples(40, dataset_config["patch_size"])
     transformer = ComputedTomographyWindowTransformer(
-        raw_min=config["dataset"]["raw_min"],
-        raw_max=config["dataset"]["raw_max"],
-        lung_window_level=config["dataset"]["lung_window_level"],
-        lung_window_width=config["dataset"]["lung_window_width"],
-        mediastinal_window_level=config["dataset"]["mediastinal_window_level"],
-        mediastinal_window_width=config["dataset"]["mediastinal_window_width"],
+        dataset_config["raw_min"], dataset_config["raw_max"],
+        dataset_config["lung_window_level"], dataset_config["lung_window_width"],
+        dataset_config["mediastinal_window_level"], dataset_config["mediastinal_window_width"],
     )
+    splitter = PatientWiseCrossValidationSplitter(dataset_config["num_folds"], dataset_config["seed"])
+    folds = splitter.split([s["patient_id"] for s in samples])
+    train_data = [samples[i] for i in folds[fold_index]["train_indices"]]
+    val_data = [samples[i] for i in folds[fold_index]["validation_indices"]]
 
-    splitter = PatientWiseCrossValidationSplitter(
-        number_of_folds=config["dataset"]["num_folds"],
-        random_seed=config["dataset"]["seed"],
-    )
-    patient_ids = [s["patient_id"] for s in samples]
-    folds = splitter.split(patient_ids)
-
-    train_indices = folds[fold_index]["train_indices"]
-    val_indices = folds[fold_index]["validation_indices"]
-
-    train_data = [samples[i] for i in train_indices]
-    val_data = [samples[i] for i in val_indices]
-
-    p_size = config["dataset"].get("patch_size", 64)
+    p_size = dataset_config.get("patch_size", 64)
+    use_25d = bool(dataset_config.get("use_25d", False))
+    use_dual_fov = bool(dataset_config.get("use_dual_fov", False))
+    if use_25d:
+        _attach_25d_neighbors(train_data); _attach_25d_neighbors(val_data)
     min_area = int(dataset_config.get("min_mask_area") or 0)
     if min_area > 0:
         train_data = [s for s in train_data if _center_mask_area(s["mask"], p_size) >= min_area]
         val_data = [s for s in val_data if _center_mask_area(s["mask"], p_size) >= min_area]
-
-    train_dataset = LidcIdriSegmentationDataset(train_data, transformer, is_training=True, target_patch_size=p_size)
-    val_dataset = LidcIdriSegmentationDataset(val_data, transformer, is_training=False, target_patch_size=p_size)
+    train_dataset = LidcIdriSegmentationDataset(train_data, transformer, True, p_size, use_25d, use_dual_fov)
+    val_dataset = LidcIdriSegmentationDataset(val_data, transformer, False, p_size, use_25d, use_dual_fov)
 
     batch_size = config["train"]["batch_size"]
     train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, drop_last=True)

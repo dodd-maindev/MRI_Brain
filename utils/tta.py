@@ -11,7 +11,7 @@ def predict_with_d4_tta(
     """Average model final_prediction across 8 flip/rotation symmetries."""
     if not enabled:
         return model(inputs)["final_prediction"]
-    acc = torch.zeros_like(inputs["raw"])
+    acc = torch.zeros_like(inputs["raw"][:, :1])
     for k in range(4):
         for flip in (False, True):
             aug = {name: torch.rot90(tensor, k, (-2, -1)) for name, tensor in inputs.items()}

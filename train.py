@@ -1,41 +1,29 @@
 """Entry point for training MUS-Net with real-time Drive saving and resume."""
 
 from pathlib import Path
-import sys
+import argparse, sys, numpy as np, torch, yaml
 
 _parent = str(Path(__file__).resolve().parent.parent)
-if _parent not in sys.path:
-    sys.path.insert(0, _parent)
-
-import argparse
-import numpy as np
-import torch
-import yaml
+if _parent not in sys.path: sys.path.insert(0, _parent)
 from mus_net.data.data_factory import prepare_fold_dataloaders
 from mus_net.models.mus_net import MultiWindowSegmentationNetwork
 from mus_net.trainer import MusNetTrainer
 
 
 def build_network_from_config(config: dict) -> MultiWindowSegmentationNetwork:
-    """Instantiate MUS-Net using parameters from YAML config."""
+    """Instantiate MUS-Net or AMU-Net using parameters from YAML config."""
+    dc, m, ab = config["dataset"], config["model"], config["ablation"]
+    in_ch = (3 if dc.get("use_25d", False) else 1) + (1 if dc.get("use_dual_fov", False) else 0)
     return MultiWindowSegmentationNetwork(
-        base_channels=config["model"]["base_channels"],
-        latent_dimension=config["model"]["latent_dimension"],
-        beta=config["model"]["beta"],
-        attention_downsample_ratio=config["model"]["attention_downsample_ratio"],
-        lung_filter=config["ablation"]["lung_filter"],
-        medias_filter=config["ablation"]["medias_filter"],
-        raw_filter=config["ablation"]["raw_filter"],
-        active_branches=config["ablation"]["active_branches"],
-        use_uim=config["ablation"]["use_uncertainty_indication_module"],
-        use_ffm=config["ablation"]["use_feature_filter_module"],
-        use_uncertainty_gate=config["ablation"].get("use_uncertainty_gate", False),
-        use_adaptive_window=config["ablation"].get("use_adaptive_window", False),
-        otsu_soft=config["model"].get("otsu_soft", False),
-        otsu_temperature=config["model"].get("otsu_temperature", 8.0),
-        unet_stages=config["model"].get("unet_stages", 5),
-        use_aspp_bottleneck=config["model"].get("use_aspp_bottleneck", False),
-        dropout_rate=config["model"].get("dropout_rate", 0.0),
+        base_channels=m["base_channels"], latent_dimension=m["latent_dimension"], beta=m["beta"],
+        attention_downsample_ratio=m["attention_downsample_ratio"],
+        lung_filter=ab["lung_filter"], medias_filter=ab["medias_filter"], raw_filter=ab["raw_filter"],
+        active_branches=ab["active_branches"],
+        use_uim=ab["use_uncertainty_indication_module"], use_ffm=ab["use_feature_filter_module"],
+        use_uncertainty_gate=ab.get("use_uncertainty_gate", False), use_adaptive_window=ab.get("use_adaptive_window", False),
+        otsu_soft=m.get("otsu_soft", False), otsu_temperature=m.get("otsu_temperature", 8.0),
+        unet_stages=m.get("unet_stages", 5), use_aspp_bottleneck=m.get("use_aspp_bottleneck", False),
+        dropout_rate=m.get("dropout_rate", 0.0), in_channels=in_ch,
     )
 
 

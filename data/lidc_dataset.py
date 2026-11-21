@@ -1,8 +1,8 @@
-"""LIDC-IDRI 2D CT dataset loader with multi-window generation."""
+"""LIDC-IDRI 2D/2.5D Dual-FOV CT dataset loader with multi-window generation."""
 
 import math
 import random
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 import numpy as np
 import scipy.ndimage as ndi
 import torch
@@ -11,7 +11,7 @@ from mus_net.data.windowing import ComputedTomographyWindowTransformer
 
 
 class LidcIdriSegmentationDataset(Dataset):
-    """Dataset delivering multi-window CT slices and binary nodule masks."""
+    """Dataset delivering multi-window (2D or 2.5D + Dual-FOV) CT slices and masks."""
 
     def __init__(
         self,
@@ -19,69 +19,80 @@ class LidcIdriSegmentationDataset(Dataset):
         window_transformer: ComputedTomographyWindowTransformer,
         is_training: bool = False,
         target_patch_size: int = 64,
+        use_25d: bool = False,
+        use_dual_fov: bool = False,
     ) -> None:
-        """Initialize dataset with sample references, window transformer, and crop size."""
-        self.samples = samples
-        self.transformer = window_transformer
-        self.is_training = is_training
-        self.target_size = target_patch_size
+        """Initialize dataset with sample list, window transformer, and context flags."""
+        self.samples, self.transformer = samples, window_transformer
+        self.is_training, self.target_size = is_training, target_patch_size
+        self.use_25d, self.use_dual_fov = use_25d, use_dual_fov
 
     def __len__(self) -> int:
         """Return total sample count."""
         return len(self.samples)
 
+    def _crop_center(self, arr: np.ndarray) -> np.ndarray:
+        """Center-crop a 2D array to target_size if larger."""
+        if self.target_size and arr.shape[0] > self.target_size:
+            h, w = arr.shape
+            sy, sx = (h - self.target_size) // 2, (w - self.target_size) // 2
+            return arr[sy : sy + self.target_size, sx : sx + self.target_size]
+        return arr
+
+    def _downsample_global(self, hu_full: np.ndarray) -> np.ndarray:
+        """Resize full 128x128 FOV to target_size for wide anatomical context."""
+        if not self.target_size or hu_full.shape[0] == self.target_size:
+            return hu_full
+        zoom_f = self.target_size / float(hu_full.shape[0])
+        return ndi.zoom(hu_full, zoom_f, order=1).astype(np.float32)
+
     def _apply_augmentation(
-        self, hu_patch: np.ndarray, mask: np.ndarray
+        self, hu_stack: np.ndarray, mask: np.ndarray
     ) -> tuple[np.ndarray, np.ndarray]:
-        """Apply synchronous spatial augmentations to patch and mask."""
+        """Apply synchronous spatial augmentations to [C, H, W] stack and [H, W] mask."""
         if random.random() > 0.5:
-            hu_patch, mask = np.fliplr(hu_patch), np.fliplr(mask)
+            hu_stack, mask = np.flip(hu_stack, axis=2), np.fliplr(mask)
         if random.random() > 0.5:
-            hu_patch, mask = np.flipud(hu_patch), np.flipud(mask)
+            hu_stack, mask = np.flip(hu_stack, axis=1), np.flipud(mask)
         k_rot = random.choice([0, 1, 2, 3])
         if k_rot > 0:
-            hu_patch, mask = np.rot90(hu_patch, k=k_rot), np.rot90(mask, k=k_rot)
+            hu_stack, mask = np.rot90(hu_stack, k=k_rot, axes=(1, 2)), np.rot90(mask, k=k_rot)
         if random.random() > 0.5:
-            angle = math.radians(random.uniform(-15.0, 15.0))
-            scale = random.uniform(0.85, 1.15)
-            c_a, s_a = math.cos(angle) / scale, math.sin(angle) / scale
-            matrix = np.array([[c_a, -s_a], [s_a, c_a]], dtype=np.float32)
-            center = np.array(hu_patch.shape, dtype=np.float32) / 2.0 - 0.5
-            offset = center - matrix @ center
-            hu_patch = ndi.affine_transform(hu_patch, matrix, offset=offset, order=1, mode="nearest")
-            mask = (ndi.affine_transform(mask, matrix, offset=offset, order=0, mode="constant") > 0.5).astype(np.float32)
+            ang, sc = math.radians(random.uniform(-15.0, 15.0)), random.uniform(0.85, 1.15)
+            ca, sa = math.cos(ang) / sc, math.sin(ang) / sc
+            mat = np.array([[ca, -sa], [sa, ca]], dtype=np.float32)
+            ctr = np.array(mask.shape, dtype=np.float32) / 2.0 - 0.5
+            off = ctr - mat @ ctr
+            hu_stack = np.stack([ndi.affine_transform(ch, mat, offset=off, order=1, mode="nearest") for ch in hu_stack])
+            mask = (ndi.affine_transform(mask, mat, offset=off, order=0, mode="constant") > 0.5).astype(np.float32)
         if random.random() > 0.5:
-            max_shift = 4
-            patch_height, patch_width = hu_patch.shape
-            padded_hu = np.pad(hu_patch, max_shift, mode="edge")
-            padded_mask = np.pad(mask, max_shift, mode="constant")
-            start_y = max_shift + random.randint(-max_shift, max_shift)
-            start_x = max_shift + random.randint(-max_shift, max_shift)
-            hu_patch = padded_hu[start_y : start_y + patch_height, start_x : start_x + patch_width]
-            mask = padded_mask[start_y : start_y + patch_height, start_x : start_x + patch_width]
-        return np.ascontiguousarray(hu_patch), np.ascontiguousarray(mask)
+            ms, (h, w) = 4, mask.shape
+            sy, sx = ms + random.randint(-ms, ms), ms + random.randint(-ms, ms)
+            hu_stack = np.pad(hu_stack, ((0, 0), (ms, ms), (ms, ms)), mode="edge")[:, sy : sy + h, sx : sx + w]
+            mask = np.pad(mask, ms, mode="constant")[sy : sy + h, sx : sx + w]
+        return np.ascontiguousarray(hu_stack), np.ascontiguousarray(mask)
 
     def __getitem__(self, index: int) -> Dict[str, Any]:
-        """Fetch item, crop to target size, transform windows, and format tensors."""
+        """Build [C, H, W] multi-window tensors (2D or 2.5D + Dual-FOV) and mask."""
         item = self.samples[index]
-        hu_patch = item["hu_patch"].astype(np.float32)
-        mask = (item["mask"] > 0).astype(np.float32)
-
-        if self.target_size and hu_patch.shape[0] > self.target_size:
-            h, w = hu_patch.shape
-            sy, sx = (h - self.target_size) // 2, (w - self.target_size) // 2
-            hu_patch = hu_patch[sy : sy + self.target_size, sx : sx + self.target_size]
-            mask = mask[sy : sy + self.target_size, sx : sx + self.target_size]
-
+        hu_full = item["hu_patch"].astype(np.float32)
+        mask = self._crop_center((item["mask"] > 0).astype(np.float32))
+        channels = (
+            [self._crop_center(item.get("prev_hu", hu_full).astype(np.float32)),
+             self._crop_center(hu_full),
+             self._crop_center(item.get("next_hu", hu_full).astype(np.float32))]
+            if self.use_25d else [self._crop_center(hu_full)]
+        )
+        if self.use_dual_fov:
+            channels.append(self._downsample_global(hu_full))
+        hu_stack = np.stack(channels, axis=0)
         if self.is_training:
-            hu_patch, mask = self._apply_augmentation(hu_patch, mask)
-
-        windows = self.transformer.transform(hu_patch)
+            hu_stack, mask = self._apply_augmentation(hu_stack, mask)
+        windows = self.transformer.transform(hu_stack)
         return {
-            "raw": torch.from_numpy(windows["raw"]).unsqueeze(0).float(),
-            "lung": torch.from_numpy(windows["lung"]).unsqueeze(0).float(),
-            "medias": torch.from_numpy(windows["medias"]).unsqueeze(0).float(),
+            "raw": torch.from_numpy(windows["raw"]).float(),
+            "lung": torch.from_numpy(windows["lung"]).float(),
+            "medias": torch.from_numpy(windows["medias"]).float(),
             "mask": torch.from_numpy(mask).unsqueeze(0).float(),
             "patient_id": str(item.get("patient_id", f"P_{index}")),
         }
-

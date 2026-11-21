@@ -34,10 +34,11 @@ class AdaptiveMultiWindowModule(nn.Module):
         return torch.clamp((hu - low) / (ww + 1e-6), 0.0, 1.0)
 
     def forward(self, inputs: Dict[str, torch.Tensor]) -> Dict[str, torch.Tensor]:
-        """Generate slice-adaptive lung and mediastinal windows from raw CT input."""
+        """Generate slice-adaptive lung and mediastinal windows across all input channels."""
         raw = inputs["raw"]
         hu = raw * self.raw_scale + self.raw_min
-        delta = self.base_offsets.view(1, 4) + self.context_net(raw)
+        center_raw = raw[:, 1:2] if raw.shape[1] >= 3 else raw[:, 0:1]
+        delta = self.base_offsets.view(1, 4) + self.context_net(center_raw)
         d = delta.unsqueeze(-1).unsqueeze(-1)
 
         wl_lung = -600.0 + 120.0 * torch.tanh(d[:, 0:1])

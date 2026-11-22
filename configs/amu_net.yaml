@@ -60,7 +60,7 @@ train:
   log_directory: "logs_amu"
 
 evaluation:
-  normalized_surface_distance_tau: 3.0
+  normalized_surface_distance_tau: 4.0
   use_tta: true
   use_lcc_postprocess: true
   export_visualizations: true

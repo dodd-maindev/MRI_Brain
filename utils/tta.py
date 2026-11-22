@@ -1,6 +1,8 @@
-"""Test-Time Augmentation (D4 dihedral 8x symmetry averaging) for inference."""
+"""Test-Time Augmentation (D4 8x) and Largest Connected Component post-processing."""
 
 from typing import Dict
+import numpy as np
+import scipy.ndimage as ndi
 import torch
 import torch.nn as nn
 
@@ -22,3 +24,16 @@ def predict_with_d4_tta(
                 pred = torch.flip(pred, (-1,))
             acc = acc + torch.rot90(pred, -k, (-2, -1))
     return acc / 8.0
+
+
+def suppress_stray_components(probs: torch.Tensor, threshold: float = 0.5) -> torch.Tensor:
+    """Retain the main nodule component per slice to eliminate stray FP specks."""
+    p_np = probs.detach().cpu().numpy().copy()
+    for i in range(p_np.shape[0]):
+        labeled, num = ndi.label(p_np[i, 0] >= threshold)
+        if num > 1:
+            counts = np.bincount(labeled.ravel())
+            counts[0] = 0
+            largest = int(np.argmax(counts))
+            p_np[i, 0][labeled != largest] = 0.0
+    return torch.from_numpy(p_np).to(probs.device)

@@ -56,8 +56,8 @@ class LidcIdriSegmentationDataset(Dataset):
         k_rot = random.choice([0, 1, 2, 3])
         if k_rot > 0:
             hu_stack, mask = np.rot90(hu_stack, k=k_rot, axes=(1, 2)), np.rot90(mask, k=k_rot)
-        if random.random() > 0.5:
-            ang, sc = math.radians(random.uniform(-15.0, 15.0)), random.uniform(0.85, 1.15)
+        if random.random() > 0.65:
+            ang, sc = math.radians(random.uniform(-10.0, 10.0)), random.uniform(0.90, 1.10)
             ca, sa = math.cos(ang) / sc, math.sin(ang) / sc
             mat = np.array([[ca, -sa], [sa, ca]], dtype=np.float32)
             ctr = np.array(mask.shape, dtype=np.float32) / 2.0 - 0.5

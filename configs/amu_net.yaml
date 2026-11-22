@@ -1,4 +1,4 @@
-# AMU-Net (Package B): 2.5D (z-1, z, z+1) + Dual-FOV (128->64 + 64) + AdaWindow + ASPP + AdamW/EMA
+# AMU-Net (Package B - Fair 64x64 Benchmark): 2.5D + Dual-FOV + AdaWindow + ASPP + AdamW/EMA + TTA/LCC
 dataset:
   patch_size: 64
   num_folds: 5
@@ -13,8 +13,7 @@ dataset:
   min_annotators: 2
   min_diameter_mm: 3.0
   max_diameter_mm: 30.0
-  min_mask_area: 200
-  roi_crop_size: 48
+  min_mask_area: 100
   use_25d: true
   use_dual_fov: true
 
@@ -25,7 +24,7 @@ model:
   attention_downsample_ratio: 1
   unet_stages: 4
   use_aspp_bottleneck: true
-  dropout_rate: 0.15
+  dropout_rate: 0.10
   otsu_bins: 256
   otsu_straight_through: true
   otsu_soft: true
@@ -39,9 +38,9 @@ loss:
   use_dice_loss: true
   dice_weight: 1.0
   bce_weight: 1.0
-  boundary_weight: 0.25
-  tversky_weight: 0.20
-  iou_weight: 0.30
+  boundary_weight: 0.30
+  tversky_weight: 0.15
+  iou_weight: 0.35
   use_uncertainty_aux: true
   use_posterior_kl: false
   kl_weight: 0.001
@@ -63,6 +62,7 @@ train:
 evaluation:
   normalized_surface_distance_tau: 3.0
   use_tta: true
+  use_lcc_postprocess: true
   export_visualizations: true
   visualization_directory: "visualizations_amu"
 

@@ -1,36 +1,31 @@
-"""Loss functions for MUS-Net and AMU-Net multi-window guidance."""
+"""Loss functions for MUS-Net, AMU-Net, and Evidential EDL-MUS-Net."""
 
-from typing import Dict, Optional, Tuple
+from typing import Any, Dict, Optional, Tuple
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from mus_net.boundary_loss import compute_boundary_loss, compute_focal_tversky_loss, compute_soft_iou_loss
+from mus_net.evidential_loss import compute_evidential_beta_loss
 
 
 class MultiWindowSegmentationLoss(nn.Module):
-    """Calculates composite BCE + Dice + Soft-IoU + Distance-Boundary loss."""
+    """Calculates BCE/Evidential-Beta + Dice + Soft-IoU + Distance-Boundary loss."""
 
     def __init__(
-        self,
-        alpha_1: float = 1.0,
-        alpha_2: float = 0.5,
-        use_dice_loss: bool = True,
-        dice_weight: float = 1.0,
-        bce_weight: float = 1.0,
-        use_posterior_kl: bool = False,
-        kl_weight: float = 0.001,
-        boundary_weight: float = 0.0,
-        tversky_weight: float = 0.0,
-        use_uncertainty_aux: bool = False,
-        iou_weight: float = 0.0,
+        self, alpha_1: float = 1.0, alpha_2: float = 0.5, use_dice_loss: bool = True,
+        dice_weight: float = 1.0, bce_weight: float = 1.0, use_posterior_kl: bool = False,
+        kl_weight: float = 0.001, boundary_weight: float = 0.0, tversky_weight: float = 0.0,
+        use_uncertainty_aux: bool = False, iou_weight: float = 0.0,
+        use_evidential: bool = False, edl_kl_weight: float = 0.05,
     ) -> None:
-        """Initialize loss weights and flags."""
+        """Initialize loss weights and evidential flags."""
         super().__init__()
         self.alpha_1, self.alpha_2 = alpha_1, alpha_2
         self.use_dice_loss, self.dice_weight, self.bce_weight = use_dice_loss, dice_weight, bce_weight
         self.use_posterior_kl, self.kl_weight = use_posterior_kl, kl_weight
         self.boundary_weight, self.tversky_weight = boundary_weight, tversky_weight
         self.use_uncertainty_aux, self.iou_weight = use_uncertainty_aux, iou_weight
+        self.use_evidential, self.edl_kl_weight = use_evidential, edl_kl_weight
 
     @staticmethod
     def _compute_dice_loss(
@@ -57,11 +52,18 @@ class MultiWindowSegmentationLoss(nn.Module):
         return bce
 
     def forward(
-        self, model_outputs: Dict[str, torch.Tensor], ground_truth_mask: torch.Tensor
+        self, model_outputs: Dict[str, Any], ground_truth_mask: torch.Tensor, annealing_factor: float = 1.0
     ) -> Tuple[torch.Tensor, Dict[str, float]]:
-        """Compute composite objective function across all active branches."""
+        """Compute composite objective across final head and active window branches."""
         final_pred = model_outputs["final_prediction"]
-        loss_ffm = self._compute_term_loss(final_pred, ground_truth_mask)
+        if self.use_evidential and model_outputs.get("final_evidence") is not None:
+            a_f, b_f = model_outputs["final_evidence"]
+            loss_ffm = compute_evidential_beta_loss(a_f, b_f, ground_truth_mask, self.edl_kl_weight, annealing_factor)
+            if self.use_dice_loss:
+                loss_ffm = loss_ffm + self.dice_weight * self._compute_dice_loss(final_pred, ground_truth_mask)
+        else:
+            loss_ffm = self._compute_term_loss(final_pred, ground_truth_mask)
+
         if self.boundary_weight > 0.0:
             loss_ffm = loss_ffm + self.boundary_weight * compute_boundary_loss(final_pred, ground_truth_mask)
         if self.tversky_weight > 0.0:
@@ -69,21 +71,25 @@ class MultiWindowSegmentationLoss(nn.Module):
         if self.iou_weight > 0.0:
             loss_ffm = loss_ffm + self.iou_weight * compute_soft_iou_loss(final_pred, ground_truth_mask)
 
-        branch_losses_sum = torch.tensor(0.0, device=ground_truth_mask.device)
-        loss_details = {"loss_final": float(loss_ffm.item())}
-        weights_map = model_outputs.get("window_weights") or {}
-        active_count = 0
-        for branch_name, mask_pred in model_outputs.get("branch_masks", {}).items():
-            if mask_pred is not None:
-                pw = (0.25 + 0.75 * weights_map["medias"].clamp(0.0, 1.0)).detach() if (
-                    self.use_uncertainty_aux and branch_name == "medias" and "medias" in weights_map
-                ) else None
-                term = self._compute_term_loss(mask_pred, ground_truth_mask, pw)
-                branch_losses_sum = branch_losses_sum + term
-                loss_details[f"loss_{branch_name}"] = float(term.item())
-                active_count += 1
+        branch_sum = torch.tensor(0.0, device=ground_truth_mask.device)
+        loss_details, active_count = {"loss_final": float(loss_ffm.item())}, 0
+        if self.use_evidential and model_outputs.get("branch_evidence"):
+            for name, (a_b, b_b) in model_outputs["branch_evidence"].items():
+                term = compute_evidential_beta_loss(a_b, b_b, ground_truth_mask, self.edl_kl_weight, annealing_factor)
+                branch_sum, active_count = branch_sum + term, active_count + 1
+                loss_details[f"loss_{name}"] = float(term.item())
+        else:
+            w_map = model_outputs.get("window_weights") or {}
+            for name, mask_pred in model_outputs.get("branch_masks", {}).items():
+                if mask_pred is not None:
+                    pw = (0.25 + 0.75 * w_map["medias"].clamp(0.0, 1.0)).detach() if (
+                        self.use_uncertainty_aux and name == "medias" and "medias" in w_map
+                    ) else None
+                    term = self._compute_term_loss(mask_pred, ground_truth_mask, pw)
+                    branch_sum, active_count = branch_sum + term, active_count + 1
+                    loss_details[f"loss_{name}"] = float(term.item())
 
-        total_loss = self.alpha_1 * loss_ffm + (self.alpha_2 * branch_losses_sum if active_count > 0 else 0.0)
+        total_loss = self.alpha_1 * loss_ffm + (self.alpha_2 * branch_sum if active_count > 0 else 0.0)
         if self.use_posterior_kl and "latent_parameters" in model_outputs:
             kl_sum = sum(
                 -0.5 * torch.mean(torch.sum(1.0 + lv - mu**2 - torch.exp(lv), dim=1))

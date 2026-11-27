@@ -35,6 +35,7 @@ class MusNetTrainer:
             lc["alpha_1"], lc["alpha_2"], lc.get("use_dice_loss", True), lc.get("dice_weight", 1.0),
             lc.get("bce_weight", 1.0), lc["use_posterior_kl"], lc["kl_weight"], lc.get("boundary_weight", 0.0),
             lc.get("tversky_weight", 0.0), lc.get("use_uncertainty_aux", False), lc.get("iou_weight", 0.0),
+            lc.get("use_evidential", False), lc.get("edl_kl_weight", 0.05),
         )
         self.best_dsc, self.ckpt_dir = -1.0, Path(tc["checkpoint_directory"])
         self.ckpt_dir.mkdir(parents=True, exist_ok=True)
@@ -59,13 +60,13 @@ class MusNetTrainer:
         self.best_dsc, ep = ckpt.get("best_dsc", -1.0), int(ckpt.get("epoch", 0))
         for _ in range(ep): self.scheduler.step()
         return ep + 1
-    def train_epoch(self, dataloader: Any) -> float:
-        """Execute one training epoch with gradient clipping, EMA, and LR step."""
-        self.model.train(); total_loss = 0.0
+    def train_epoch(self, dataloader: Any, epoch: int = 1) -> float:
+        """Execute one training epoch with KL annealing, grad clip, EMA, and LR step."""
+        self.model.train(); total_loss, anneal = 0.0, min(1.0, float(epoch) / 10.0)
         for batch in dataloader:
             inputs = {k: batch[k].to(self.device) for k in ["raw", "lung", "medias"]}
             self.optimizer.zero_grad()
-            loss, _ = self.criterion(self.model(inputs), batch["mask"].to(self.device))
+            loss, _ = self.criterion(self.model(inputs), batch["mask"].to(self.device), anneal)
             loss.backward()
             if self.grad_clip > 0.0: torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.grad_clip)
             self.optimizer.step()

@@ -24,6 +24,7 @@ def build_network_from_config(config: dict) -> MultiWindowSegmentationNetwork:
         otsu_soft=m.get("otsu_soft", False), otsu_temperature=m.get("otsu_temperature", 8.0),
         unet_stages=m.get("unet_stages", 5), use_aspp_bottleneck=m.get("use_aspp_bottleneck", False),
         dropout_rate=m.get("dropout_rate", 0.0), in_channels=in_ch,
+        use_evidential=ab.get("use_evidential", False),
     )
 
 
@@ -41,7 +42,7 @@ def execute_fold_training(config: dict, fold: int, reset: bool = False) -> float
         return trainer.best_dsc
 
     for epoch in range(start_epoch, num_epochs + 1):
-        tr_loss = trainer.train_epoch(train_loader)
+        tr_loss = trainer.train_epoch(train_loader, epoch)
         v = trainer.validate(val_loader)
         trainer.log_epoch(epoch, tr_loss, v["loss"], v["dsc"], v["iou"], v["nsd"])
         trainer.save_checkpoint(v["dsc"], epoch)

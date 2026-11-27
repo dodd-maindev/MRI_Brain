@@ -77,14 +77,17 @@ def test_full_mus_net_end_to_end_shape() -> None:
 def test_amu_net_uncertainty_gate_and_soft_otsu_shape() -> None:
     """Verify 2.5D + Dual-FOV (4-ch) MWM uncertainty gate, AdaWindow, ASPP, and Soft-Otsu."""
     inputs = {k: torch.randn(2, 4, 64, 64) for k in ["raw", "lung", "medias"]}
-    model = MultiWindowSegmentationNetwork(
-        base_channels=16, latent_dimension=6, unet_stages=4, use_aspp_bottleneck=True,
-        dropout_rate=0.15, use_uncertainty_gate=True, use_adaptive_window=True,
-        otsu_soft=True, in_channels=4,
-    )
-    outputs = model(inputs)
-    assert outputs["final_prediction"].shape == (2, 1, 64, 64)
-    assert set(outputs["window_weights"].keys()) == {"lung", "medias", "raw"}
-    weight_sum = sum(outputs["window_weights"].values())
-    assert torch.allclose(weight_sum, torch.ones(2, 1, 64, 64), atol=1e-5)
+    model = MultiWindowSegmentationNetwork(16, 6, unet_stages=4, use_aspp_bottleneck=True, dropout_rate=0.15, use_uncertainty_gate=True, use_adaptive_window=True, otsu_soft=True, in_channels=4)
+    out = model(inputs)
+    assert out["final_prediction"].shape == (2, 1, 64, 64) and set(out["window_weights"]) == {"lung", "medias", "raw"}
+    assert torch.allclose(sum(out["window_weights"].values()), torch.ones(2, 1, 64, 64), atol=1e-5)
+
+
+def test_edl_mus_net_end_to_end_shape() -> None:
+    """Verify EDL-MUS-Net outputs calibrated prob, Beta evidence, uncertainty, and conflict."""
+    inputs = {k: torch.randn(2, 4, 64, 64) for k in ["raw", "lung", "medias"]}
+    model = MultiWindowSegmentationNetwork(16, 6, unet_stages=4, use_aspp_bottleneck=True, use_adaptive_window=True, otsu_soft=True, in_channels=4, use_evidential=True)
+    out = model(inputs)
+    assert out["final_prediction"].shape == (2, 1, 64, 64) and out["epistemic_uncertainty"].shape == (2, 1, 64, 64)
+    assert out["conflict_map"].shape == (2, 1, 64, 64) and out["final_evidence"][0].min() >= 1.0 and out["final_evidence"][1].min() >= 1.0
 

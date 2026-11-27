@@ -5,6 +5,9 @@ import torch
 from mus_net.data.patient_splitter import PatientWiseCrossValidationSplitter
 from mus_net.data.windowing import ComputedTomographyWindowTransformer
 from mus_net.losses import MultiWindowSegmentationLoss
+from mus_net.evidential_loss import compute_evidential_beta_loss
+from mus_net.models.evidential_fusion import combine_two_opinions
+from mus_net.models.otsu_filter import OtsuThresholdFilter
 from mus_net.metrics import (
     compute_dice_coefficient,
     compute_intersection_over_union,
@@ -75,3 +78,19 @@ def test_loss_function_computation() -> None:
     assert "total_loss" in details
     loss.backward()
     assert leaf_pred.grad is not None
+
+
+def test_dempster_shafer_propositions_and_kernel_otsu_grad() -> None:
+    """Verify DS blind-window invariance (Prop. 1), uncertainty drop (Prop. 2), and Kernel-Otsu grad."""
+    op1 = (torch.tensor([[[[0.6]]]]), torch.tensor([[[[0.2]]]]), torch.tensor([[[[0.2]]]]))
+    blind = (torch.zeros_like(op1[0]), torch.zeros_like(op1[0]), torch.ones_like(op1[0]))
+    fused_blind, conflict = combine_two_opinions(op1, blind)
+    assert torch.allclose(conflict, torch.zeros_like(conflict))
+    assert all(torch.allclose(a, b, atol=1e-5) for a, b in zip(fused_blind, op1))
+    op2 = (torch.tensor([[[[0.5]]]]), torch.tensor([[[[0.1]]]]), torch.tensor([[[[0.4]]]]))
+    assert float(combine_two_opinions(op1, op2)[0][2]) < min(float(op1[2]), float(op2[2]))
+    x = torch.randn(2, 4, 16, 16, requires_grad=True)
+    OtsuThresholdFilter(soft_mode=True)(x).sum().backward()
+    assert x.grad is not None and float(x.grad.abs().sum()) > 0.0
+    edl = compute_evidential_beta_loss(torch.full((2, 1, 8, 8), 3.0, requires_grad=True), torch.full((2, 1, 8, 8), 2.0), torch.ones(2, 1, 8, 8))
+    assert float(edl) > 0.0

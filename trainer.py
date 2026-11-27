@@ -52,7 +52,7 @@ class MusNetTrainer:
     def resume_if_available(self) -> int:
         """Restore model, scheduler progress, and EMA state from checkpoint."""
         b_p, l_p = self.ckpt_dir / f"best_model_fold_{self.fold_idx}.pth", self.ckpt_dir / f"latest_model_fold_{self.fold_idx}.pth"
-        p = b_p if b_p.exists() else l_p
+        p = l_p if l_p.exists() else b_p
         if not p.exists(): return 1
         ckpt = torch.load(p, map_location=self.device)
         self.model.load_state_dict(ckpt["model_state_dict"])

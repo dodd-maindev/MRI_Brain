@@ -17,7 +17,9 @@ from mus_net.train import build_network_from_config
 def _infer_fold_probs(config: dict, ckpt_path: Path, fold: int, device: torch.device) -> np.ndarray:
     """Run single-pass (no TTA/LCC) inference and return [N, H, W] probabilities."""
     model = build_network_from_config(config).to(device)
-    model.load_state_dict(torch.load(ckpt_path, map_location=device)["model_state_dict"])
+    state = torch.load(ckpt_path, map_location=device)["model_state_dict"]
+    missing, unexpected = model.load_state_dict(state, strict=False)
+    assert not unexpected and all("bin_centers" in k for k in missing), f"Unexpected keys: {missing}, {unexpected}"
     model.eval()
     _, val_loader = prepare_fold_dataloaders(config, fold)
     probs = [model({k: b[k].to(device) for k in ["raw", "lung", "medias"]})["final_prediction"][:, 0].cpu().numpy() for b in val_loader]

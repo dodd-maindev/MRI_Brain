@@ -31,11 +31,12 @@ class MusNetTrainer:
         )
         self.grad_clip, ema_decay = float(tc.get("grad_clip", 0.0)), float(tc.get("ema_decay", 0.0))
         self.ema = ModelExponentialMovingAverage(self.model, ema_decay) if ema_decay > 0.0 else None
+        self.supervision = lc.get("supervision", "ann0")
         self.criterion = MultiWindowSegmentationLoss(
             lc["alpha_1"], lc["alpha_2"], lc.get("use_dice_loss", True), lc.get("dice_weight", 1.0),
             lc.get("bce_weight", 1.0), lc["use_posterior_kl"], lc["kl_weight"], lc.get("boundary_weight", 0.0),
             lc.get("tversky_weight", 0.0), lc.get("use_uncertainty_aux", False), lc.get("iou_weight", 0.0),
-            lc.get("use_evidential", False), lc.get("edl_kl_weight", 0.05),
+            lc.get("use_evidential", False), lc.get("edl_kl_weight", 0.05), self.supervision,
         )
         self.best_dsc, self.ckpt_dir = -1.0, Path(tc["checkpoint_directory"])
         self.ckpt_dir.mkdir(parents=True, exist_ok=True)
@@ -66,7 +67,8 @@ class MusNetTrainer:
         for batch in dataloader:
             inputs = {k: batch[k].to(self.device) for k in ["raw", "lung", "medias"]}
             self.optimizer.zero_grad()
-            loss, _ = self.criterion(self.model(inputs), batch["mask"].to(self.device), anneal)
+            target = batch["mask"].to(self.device) if self.supervision == "ann0" else batch
+            loss, _ = self.criterion(self.model(inputs), target, anneal)
             loss.backward()
             if self.grad_clip > 0.0: torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.grad_clip)
             self.optimizer.step()

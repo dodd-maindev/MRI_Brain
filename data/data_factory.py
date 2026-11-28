@@ -4,6 +4,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Tuple
 import numpy as np
 from torch.utils.data import DataLoader
+from mus_net.data.annotator_vote_attacher import AnnotatorVoteAttacher
 from mus_net.data.lidc_dataset import LidcIdriSegmentationDataset
 from mus_net.data.patient_splitter import PatientWiseCrossValidationSplitter
 from mus_net.data.sample_repository import LidcSampleRepository
@@ -59,6 +60,8 @@ def prepare_fold_dataloaders(
         max_diameter_mm=dataset_config.get("max_diameter_mm"),
     )
     samples = repository.load() if repository.has_data() else create_synthetic_lidc_samples(40, dataset_config["patch_size"])
+    if dataset_config.get("multi_annotator_cache") and repository.has_data():
+        AnnotatorVoteAttacher(Path(dataset_config["multi_annotator_cache"])).attach(samples)
     transformer = ComputedTomographyWindowTransformer(
         dataset_config["raw_min"], dataset_config["raw_max"],
         dataset_config["lung_window_level"], dataset_config["lung_window_width"],
@@ -79,8 +82,9 @@ def prepare_fold_dataloaders(
     if min_area > 0:
         train_data = [s for s in train_data if _center_mask_area(s["mask"], p_size) >= min_area]
         val_data = [s for s in val_data if _center_mask_area(s["mask"], p_size) >= min_area]
-    train_dataset = LidcIdriSegmentationDataset(train_data, transformer, True, p_size, use_25d, use_dual_fov, roi_size)
-    val_dataset = LidcIdriSegmentationDataset(val_data, transformer, False, p_size, use_25d, use_dual_fov, roi_size)
+    rand_ann = bool(dataset_config.get("random_annotator", False))
+    train_dataset = LidcIdriSegmentationDataset(train_data, transformer, True, p_size, use_25d, use_dual_fov, roi_size, rand_ann)
+    val_dataset = LidcIdriSegmentationDataset(val_data, transformer, False, p_size, use_25d, use_dual_fov, roi_size, False)
 
     batch_size = config["train"]["batch_size"]
     train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, drop_last=True)

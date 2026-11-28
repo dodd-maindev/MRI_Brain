@@ -1,0 +1,82 @@
+# M: Beta-Binomial Evidential Multi-Annotator Supervision
+dataset:
+  patch_size: 64
+  num_folds: 5
+  seed: 42
+  raw_min: -1000.0
+  raw_max: 400.0
+  lung_window_level: -600.0
+  lung_window_width: 1500.0
+  mediastinal_window_level: 40.0
+  mediastinal_window_width: 400.0
+  data_directory: "data/lidc_preprocessed"
+  multi_annotator_cache: "/content/drive/MyDrive/lidc_full_v2/lidc_multi_annotator_cache.npz"
+  min_annotators: 2
+  min_diameter_mm: 3.0
+  max_diameter_mm: 30.0
+  min_mask_area: 100
+  use_25d: true
+  use_dual_fov: true
+
+model:
+  base_channels: 32
+  latent_dimension: 6
+  beta: 1.0
+  attention_downsample_ratio: 1
+  unet_stages: 4
+  use_aspp_bottleneck: true
+  dropout_rate: 0.10
+  otsu_bins: 256
+  otsu_straight_through: true
+  otsu_soft: true
+  otsu_temperature: 0.05
+  gabor_frequencies: [0.25]
+  gabor_orientations: [0.0, 0.78539816339, 1.57079632679, 2.35619449019]
+
+loss:
+  alpha_1: 1.0
+  alpha_2: 0.25
+  use_dice_loss: true
+  dice_weight: 1.0
+  bce_weight: 1.0
+  boundary_weight: 0.30
+  tversky_weight: 0.15
+  iou_weight: 0.35
+  use_evidential: true
+  edl_kl_weight: 0.05
+  supervision: "beta_binomial"
+  use_uncertainty_aux: false
+  use_posterior_kl: false
+  kl_weight: 0.001
+
+train:
+  optimizer: "adamw"
+  batch_size: 16
+  learning_rate: 0.0002
+  weight_decay: 0.0001
+  warmup_epochs: 2
+  grad_clip: 1.0
+  ema_decay: 0.995
+  momentum: 0.9
+  epochs: 100
+  enable_amp: false
+  checkpoint_directory: "checkpoints_m"
+  log_directory: "logs_m"
+
+evaluation:
+  normalized_surface_distance_tau: 4.0
+  use_tta: false
+  use_lcc_postprocess: false
+  export_visualizations: true
+  visualization_directory: "visualizations_m"
+
+ablation:
+  active_branches: ["lung", "medias", "raw"]
+  lung_filter: "sobel"
+  medias_filter: "otsu"
+  raw_filter: "gabor"
+  use_uncertainty_indication_module: true
+  use_feature_filter_module: true
+  use_uncertainty_gate: false
+  use_evidential: true
+  use_adaptive_window: true

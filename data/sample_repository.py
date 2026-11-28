@@ -63,7 +63,7 @@ class LidcSampleRepository:
         return [
             {"hu_patch": hus[i], "mask": masks[i], "patient_id": str(pids[i]),
              "nodule_key": str(nkeys[i]) if nkeys is not None else f"{pids[i]}_{diams[i]:.2f}",
-             "slice_z": int(zidxs[i]) if zidxs is not None else i}
+             "slice_z": int(zidxs[i]) if zidxs is not None else i, "cache_index": i, "num_annotators": int(anns[i])}
             for i in range(len(hus)) if self._is_selected(int(anns[i]), float(diams[i]))
         ], len(hus)
 

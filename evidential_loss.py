@@ -10,7 +10,7 @@ def compute_evidential_beta_loss(
     kl_weight: float = 0.05,
     annealing_factor: float = 1.0,
 ) -> torch.Tensor:
-    """Compute Type-II ML expected cross-entropy + closed-form Beta(a~, b~) || Beta(1, 1) KL."""
+    """Compute Bayes risk (expected cross-entropy) + closed-form Beta(a~, b~) || Beta(1, 1) KL."""
     y = target.float()
     strength = alpha + beta
     # Expected negative log-likelihood under p ~ Beta(alpha, beta)

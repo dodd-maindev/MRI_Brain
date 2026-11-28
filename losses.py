@@ -1,11 +1,12 @@
 """Loss functions for MUS-Net, AMU-Net, and Evidential EDL-MUS-Net."""
 
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, Optional, Tuple, Union
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from mus_net.boundary_loss import compute_boundary_loss, compute_focal_tversky_loss, compute_soft_iou_loss
 from mus_net.evidential_loss import compute_evidential_beta_loss
+from mus_net.multi_annotator_loss import SupervisionTargetResolver
 
 
 class MultiWindowSegmentationLoss(nn.Module):
@@ -16,9 +17,9 @@ class MultiWindowSegmentationLoss(nn.Module):
         dice_weight: float = 1.0, bce_weight: float = 1.0, use_posterior_kl: bool = False,
         kl_weight: float = 0.001, boundary_weight: float = 0.0, tversky_weight: float = 0.0,
         use_uncertainty_aux: bool = False, iou_weight: float = 0.0,
-        use_evidential: bool = False, edl_kl_weight: float = 0.05,
+        use_evidential: bool = False, edl_kl_weight: float = 0.05, supervision: str = "ann0",
     ) -> None:
-        """Initialize loss weights and evidential flags."""
+        """Initialize loss weights, evidential flags, and supervision strategy."""
         super().__init__()
         self.alpha_1, self.alpha_2 = alpha_1, alpha_2
         self.use_dice_loss, self.dice_weight, self.bce_weight = use_dice_loss, dice_weight, bce_weight
@@ -26,6 +27,7 @@ class MultiWindowSegmentationLoss(nn.Module):
         self.boundary_weight, self.tversky_weight = boundary_weight, tversky_weight
         self.use_uncertainty_aux, self.iou_weight = use_uncertainty_aux, iou_weight
         self.use_evidential, self.edl_kl_weight = use_evidential, edl_kl_weight
+        self.resolver = SupervisionTargetResolver(supervision, edl_kl_weight)
 
     @staticmethod
     def _compute_dice_loss(
@@ -52,40 +54,37 @@ class MultiWindowSegmentationLoss(nn.Module):
         return bce
 
     def forward(
-        self, model_outputs: Dict[str, Any], ground_truth_mask: torch.Tensor, annealing_factor: float = 1.0
+        self, model_outputs: Dict[str, Any], ground_truth_mask: Union[torch.Tensor, Dict[str, Any]], annealing_factor: float = 1.0
     ) -> Tuple[torch.Tensor, Dict[str, float]]:
         """Compute composite objective across final head and active window branches."""
         final_pred = model_outputs["final_prediction"]
+        soft_tgt, bnd_tgt, vp, vt = self.resolver.resolve(ground_truth_mask, final_pred.device)
         if self.use_evidential and model_outputs.get("final_evidence") is not None:
             a_f, b_f = model_outputs["final_evidence"]
-            loss_ffm = compute_evidential_beta_loss(a_f, b_f, ground_truth_mask, self.edl_kl_weight, annealing_factor)
+            loss_ffm = self.resolver.compute_evidential_term(a_f, b_f, soft_tgt, vp, vt, annealing_factor, compute_evidential_beta_loss)
             if self.use_dice_loss:
-                loss_ffm = loss_ffm + self.dice_weight * self._compute_dice_loss(final_pred, ground_truth_mask)
+                loss_ffm = loss_ffm + self.dice_weight * self._compute_dice_loss(final_pred, soft_tgt)
         else:
-            loss_ffm = self._compute_term_loss(final_pred, ground_truth_mask)
-
+            loss_ffm = self._compute_term_loss(final_pred, soft_tgt)
         if self.boundary_weight > 0.0:
-            loss_ffm = loss_ffm + self.boundary_weight * compute_boundary_loss(final_pred, ground_truth_mask)
+            loss_ffm = loss_ffm + self.boundary_weight * compute_boundary_loss(final_pred, bnd_tgt)
         if self.tversky_weight > 0.0:
-            loss_ffm = loss_ffm + self.tversky_weight * compute_focal_tversky_loss(final_pred, ground_truth_mask)
+            loss_ffm = loss_ffm + self.tversky_weight * compute_focal_tversky_loss(final_pred, soft_tgt)
         if self.iou_weight > 0.0:
-            loss_ffm = loss_ffm + self.iou_weight * compute_soft_iou_loss(final_pred, ground_truth_mask)
-
-        branch_sum = torch.tensor(0.0, device=ground_truth_mask.device)
+            loss_ffm = loss_ffm + self.iou_weight * compute_soft_iou_loss(final_pred, soft_tgt)
+        branch_sum = torch.tensor(0.0, device=final_pred.device)
         loss_details, active_count = {"loss_final": float(loss_ffm.item())}, 0
         if self.use_evidential and model_outputs.get("branch_evidence"):
             for name, (a_b, b_b) in model_outputs["branch_evidence"].items():
-                term = compute_evidential_beta_loss(a_b, b_b, ground_truth_mask, self.edl_kl_weight, annealing_factor)
+                term = self.resolver.compute_evidential_term(a_b, b_b, soft_tgt, vp, vt, annealing_factor, compute_evidential_beta_loss)
                 branch_sum, active_count = branch_sum + term, active_count + 1
                 loss_details[f"loss_{name}"] = float(term.item())
         else:
             w_map = model_outputs.get("window_weights") or {}
             for name, mask_pred in model_outputs.get("branch_masks", {}).items():
                 if mask_pred is not None:
-                    pw = (0.25 + 0.75 * w_map["medias"].clamp(0.0, 1.0)).detach() if (
-                        self.use_uncertainty_aux and name == "medias" and "medias" in w_map
-                    ) else None
-                    term = self._compute_term_loss(mask_pred, ground_truth_mask, pw)
+                    pw = (0.25 + 0.75 * w_map["medias"].clamp(0.0, 1.0)).detach() if (self.use_uncertainty_aux and name == "medias" and "medias" in w_map) else None
+                    term = self._compute_term_loss(mask_pred, soft_tgt, pw)
                     branch_sum, active_count = branch_sum + term, active_count + 1
                     loss_details[f"loss_{name}"] = float(term.item())
 

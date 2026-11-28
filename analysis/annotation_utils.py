@@ -10,6 +10,13 @@ from mus_net.data.patient_splitter import PatientWiseCrossValidationSplitter
 NODULE_KEY_PATTERN = re.compile(r"^.+_scan(\d+)_nodule(\d+)$")
 
 
+def ensure_pylidc_numpy_compat() -> None:
+    """Restore deprecated NumPy aliases (np.int, np.float, np.bool) required by pylidc."""
+    for attr, target in [("int", int), ("float", float), ("bool", bool)]:
+        if not hasattr(np, attr):
+            setattr(np, attr, target)
+
+
 def parse_nodule_key(nodule_key: str) -> Tuple[int, int]:
     """Extract (scan_id, nodule_index) from a cache nodule_key string."""
     match = NODULE_KEY_PATTERN.match(str(nodule_key))

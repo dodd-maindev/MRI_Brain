@@ -9,11 +9,14 @@ import pylidc as pl
 _parent = str(Path(__file__).resolve().parents[2])
 if _parent not in sys.path:
     sys.path.insert(0, _parent)
-from mus_net.analysis.annotation_utils import extract_aligned_slice_mask, parse_nodule_key
+from mus_net.analysis.annotation_utils import (
+    ensure_pylidc_numpy_compat, extract_aligned_slice_mask, parse_nodule_key,
+)
 
 
 def run_feasibility_check(cache_path: Path, num_slices: int = 50, seed: int = 42) -> None:
     """Test pylidc boolean_mask() without DICOM and measure ann0 reconstruction IoU."""
+    ensure_pylidc_numpy_compat()
     with np.load(cache_path) as cache:
         masks = cache["masks"]
         nodule_keys = cache["nodule_keys"]

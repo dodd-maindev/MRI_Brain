@@ -10,11 +10,14 @@ import pylidc as pl
 _parent = str(Path(__file__).resolve().parents[2])
 if _parent not in sys.path:
     sys.path.insert(0, _parent)
-from mus_net.analysis.annotation_utils import extract_aligned_slice_mask, parse_nodule_key
+from mus_net.analysis.annotation_utils import (
+    ensure_pylidc_numpy_compat, extract_aligned_slice_mask, parse_nodule_key,
+)
 
 
 def build_cache(cache_path: Path, output_path: Path) -> None:
     """Reconstruct up to 4 radiologist masks per slice aligned to ann0 crop center."""
+    ensure_pylidc_numpy_compat()
     with np.load(cache_path) as cache:
         masks = cache["masks"]
         nodule_keys = cache["nodule_keys"]
